@@ -2,7 +2,7 @@
 
 > Based on [plasma-virtual-screen-for-steam-deck](https://github.com/iox/plasma-virtual-screen-for-steam-deck) by [iox](https://github.com/iox) — adapted for **COSMIC Desktop** and **Arch Linux**.
 
-Create a virtual display using an HDMI dummy plug for streaming to a Steam Deck via Sunshine/Moonlight. Uses a custom EDID binary and the kernel `drm.edid_firmware` parameter to expose Steam Deck-optimized resolutions — works with any Wayland compositor and GPU driver (including Nvidia proprietary).
+Create a virtual display using an HDMI dummy plug for streaming to a Steam Deck via Sunshine/Moonlight. Uses a custom EDID binary and the kernel `drm.edid_firmware` parameter to expose Steam Deck-optimized resolutions — works with any GPU driver (AMD, Nvidia, Intel).
 
 ## Requirements
 
