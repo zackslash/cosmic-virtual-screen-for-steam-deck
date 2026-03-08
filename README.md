@@ -55,10 +55,16 @@ The installer automatically writes your display configuration to `~/.config/cosm
 # ~/.config/cosmic-deck-switch/config
 MAIN_DISPLAY=DP-2
 VIRTUAL_DISPLAY=HDMI-A-2
-DEFAULT_MODE=deck-oled-2x
+DEFAULT_MODE=deck-oled
 ```
 
-Add to Sunshine via the web UI (`https://localhost:47990`) or `~/.config/sunshine/apps.json`:
+1. **Test manually** before adding to Sunshine:
+   ```bash
+   ./sunshine-start.sh deck-oled    # Main monitor goes dark (expected)
+   ./sunshine-stop.sh               # Restores main monitor
+   ```
+
+2. **Add to Sunshine** via the web UI (`https://localhost:47990`) or edit `~/.config/sunshine/apps.json`:
 
    ```json
    {
@@ -75,12 +81,7 @@ Add to Sunshine via the web UI (`https://localhost:47990`) or `~/.config/sunshin
        ]
    }
    ```
-
-3. **Test manually** before using with Sunshine:
-   ```bash
-   ./sunshine-start.sh deck-oled    # Main monitor goes dark (expected)
-   ./sunshine-stop.sh               # Restores main monitor
-   ```
+   Replace `/path/to/` with the actual location of your cloned repository.
 
 ### Emergency Recovery
 
