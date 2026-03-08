@@ -131,6 +131,8 @@ resolve_mode() {
     case "$mode" in
         deck-lcd)    echo "1280 800 60" ;;
         deck-oled)   echo "1280 800 90" ;;
+        deck-lcd-2x) echo "2560 1600 60" ;;
+        deck-oled-2x) echo "2560 1600 90" ;;
         1200p)       echo "1920 1200 60" ;;
         1200p-90)    echo "1920 1200 90" ;;
         1200p-120)   echo "1920 1200 120" ;;
@@ -140,7 +142,7 @@ resolve_mode() {
         1600p-90)    echo "2560 1600 90" ;;
         *)
             log "ERROR: Unknown mode '$mode'"
-            log "Valid modes: deck-lcd, deck-oled, 1200p, 1200p-90, 1200p-120, 1440p, 1440p-120, 1600p, 1600p-90"
+            log "Valid modes: deck-lcd, deck-oled, deck-lcd-2x, deck-oled-2x, 1200p, 1200p-90, 1200p-120, 1440p, 1440p-120, 1600p, 1600p-90"
             exit 1
             ;;
     esac

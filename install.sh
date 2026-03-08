@@ -464,6 +464,8 @@ show_help() {
     echo "Quick modes:"
     echo "  deck-lcd      Set 1280x800@60Hz  (Steam Deck LCD native)"
     echo "  deck-oled     Set 1280x800@90Hz  (Steam Deck OLED native)"
+    echo "  deck-lcd-2x   Set 2560x1600@60Hz (Deck LCD supersampled)"
+    echo "  deck-oled-2x  Set 2560x1600@90Hz (Deck OLED supersampled)"
     echo "  1200p         Set 1920x1200@60Hz (16:10)"
     echo "  1200p-90      Set 1920x1200@90Hz"
     echo "  1200p-120     Set 1920x1200@120Hz"
@@ -505,6 +507,8 @@ set_mode() {
 case "\${1:-help}" in
     deck-lcd)    set_mode 1280  800  60   "1280x800@60Hz (Deck LCD)" ;;
     deck-oled)   set_mode 1280  800  90   "1280x800@90Hz (Deck OLED)" ;;
+    deck-lcd-2x) set_mode 2560  1600 60   "2560x1600@60Hz (Deck LCD 2x)" ;;
+    deck-oled-2x) set_mode 2560  1600 90  "2560x1600@90Hz (Deck OLED 2x)" ;;
     1200p)       set_mode 1920  1200 60   "1920x1200@60Hz" ;;
     1200p-90)    set_mode 1920  1200 90   "1920x1200@90Hz" ;;
     1200p-120)   set_mode 1920  1200 120  "1920x1200@120Hz" ;;

@@ -28,8 +28,8 @@ The mechanism is **kernel-level** (`drm.edid_firmware` boot parameter), so it wo
 | 1920x1200 | 120 Hz | 16:10 | High-refresh gaming |
 | 2560x1440 | 60 Hz | 16:9 | Desktop standard |
 | 2560x1440 | 120 Hz | 16:9 | Desktop high-refresh |
-| 2560x1600 | 60 Hz | 16:10 | 2x Deck LCD |
-| 2560x1600 | 90 Hz | 16:10 | 2x Deck OLED |
+| 2560x1600 | 60 Hz | 16:10 | 2x Deck LCD (supersampled) |
+| 2560x1600 | 90 Hz | 16:10 | 2x Deck OLED (supersampled) |
 
 ## Requirements
 
@@ -120,6 +120,8 @@ Stream ends   → sunshine-stop.sh  → Enable main monitor → Restore resoluti
 3. **Available modes** for `sunshine-start.sh`:
    - `deck-lcd` — 1280x800@60Hz (Steam Deck LCD)
    - `deck-oled` — 1280x800@90Hz (Steam Deck OLED) ← default
+   - `deck-lcd-2x` — 2560x1600@60Hz (Deck LCD supersampled)
+   - `deck-oled-2x` — 2560x1600@90Hz (Deck OLED supersampled)
    - `1200p` / `1200p-90` / `1200p-120` — 1920x1200
    - `1440p` / `1440p-120` — 2560x1440
    - `1600p` / `1600p-90` — 2560x1600
@@ -164,6 +166,10 @@ After reboot with the dummy plug connected:
 # Steam Deck native resolutions
 cosmic-deck-switch deck-lcd       # 1280x800@60Hz
 cosmic-deck-switch deck-oled      # 1280x800@90Hz
+
+# Supersampled (2x Deck resolution — downscaled on Deck for sharper image)
+cosmic-deck-switch deck-lcd-2x    # 2560x1600@60Hz
+cosmic-deck-switch deck-oled-2x   # 2560x1600@90Hz
 
 # Higher resolutions
 cosmic-deck-switch 1200p          # 1920x1200@60Hz
