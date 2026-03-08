@@ -10,7 +10,7 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 echo "Building test container..."
-docker build -f "$SCRIPT_DIR/Dockerfile.test" -t cosmic-vscreen-tests "$SCRIPT_DIR"
+docker build -f "$SCRIPT_DIR/tests/Dockerfile.test" -t cosmic-vscreen-tests "$SCRIPT_DIR"
 
 echo
 echo "Running tests..."
