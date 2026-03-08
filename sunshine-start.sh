@@ -25,7 +25,7 @@ CONFIG_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/cosmic-deck-switch/config"
 
 MAIN_DISPLAY="DP-2"
 VIRTUAL_DISPLAY="HDMI-A-1"
-DEFAULT_MODE="deck-oled-2x"
+DEFAULT_MODE="deck-oled"
 
 if [ -f "$CONFIG_FILE" ]; then
     while IFS='=' read -r key value; do

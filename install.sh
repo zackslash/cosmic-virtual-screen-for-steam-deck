@@ -185,9 +185,9 @@ prompt_default_mode() {
     echo " 10) 1600p         2560x1600@60Hz"
     echo " 11) 1600p-90      2560x1600@90Hz"
     echo
-    read -p "Choice [4]: " mode_choice
+    read -p "Choice [2]: " mode_choice
 
-    case "${mode_choice:-4}" in
+    case "${mode_choice:-2}" in
         1)  echo "deck-lcd" ;;
         2)  echo "deck-oled" ;;
         3)  echo "deck-lcd-2x" ;;
@@ -200,8 +200,8 @@ prompt_default_mode() {
         10) echo "1600p" ;;
         11) echo "1600p-90" ;;
         *)
-            print_warning "Invalid choice, defaulting to deck-oled-2x"
-            echo "deck-oled-2x"
+            print_warning "Invalid choice, defaulting to deck-oled"
+            echo "deck-oled"
             ;;
     esac
 }
