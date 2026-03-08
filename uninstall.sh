@@ -48,7 +48,23 @@ else
     print_info "Helper script not found (already removed)"
 fi
 
-# ── Step 3: Remove from mkinitcpio.conf ────────────────────────────
+# ── Step 3: Remove config directory ────────────────────────────────
+CONFIG_DIR=""
+if [ -n "${SUDO_USER:-}" ]; then
+    real_home=$(getent passwd "$SUDO_USER" | cut -d: -f6)
+    CONFIG_DIR="${real_home}/.config/cosmic-deck-switch"
+else
+    CONFIG_DIR="$HOME/.config/cosmic-deck-switch"
+fi
+
+if [ -d "$CONFIG_DIR" ]; then
+    rm -rf "$CONFIG_DIR"
+    print_success "Config directory removed: $CONFIG_DIR"
+else
+    print_info "Config directory not found (already removed)"
+fi
+
+# ── Step 4: Remove from mkinitcpio.conf ────────────────────────────
 if [ -f "/etc/mkinitcpio.conf" ]; then
     if grep -q "steamdeck_virtual.bin" /etc/mkinitcpio.conf; then
         cp /etc/mkinitcpio.conf "/etc/mkinitcpio.conf.backup.uninstall.$(date +%Y%m%d_%H%M%S)"
@@ -61,7 +77,7 @@ if [ -f "/etc/mkinitcpio.conf" ]; then
     fi
 fi
 
-# ── Step 4: Remove from /etc/kernel/cmdline (UKI setups) ──────────
+# ── Step 5: Remove from /etc/kernel/cmdline (UKI setups) ──────────
 if [ -f "/etc/kernel/cmdline" ]; then
     if grep -q "drm.edid_firmware" "/etc/kernel/cmdline"; then
         cp "/etc/kernel/cmdline" "/etc/kernel/cmdline.backup.uninstall.$(date +%Y%m%d_%H%M%S)"
@@ -71,7 +87,7 @@ if [ -f "/etc/kernel/cmdline" ]; then
     fi
 fi
 
-# ── Step 5: Remove from GRUB ──────────────────────────────────────
+# ── Step 6: Remove from GRUB ──────────────────────────────────────
 if [ -f "/etc/default/grub" ]; then
     if grep -q "drm.edid_firmware" /etc/default/grub; then
         cp /etc/default/grub "/etc/default/grub.backup.uninstall.$(date +%Y%m%d_%H%M%S)"
@@ -87,7 +103,7 @@ if [ -f "/etc/default/grub" ]; then
     fi
 fi
 
-# ── Step 6: Remove from systemd-boot entries ──────────────────────
+# ── Step 7: Remove from systemd-boot entries ──────────────────────
 for entries_dir in /boot/loader/entries /boot/efi/loader/entries; do
     if [ -d "$entries_dir" ]; then
         for entry in "$entries_dir"/*.conf; do
@@ -101,7 +117,7 @@ for entries_dir in /boot/loader/entries /boot/efi/loader/entries; do
     fi
 done
 
-# ── Step 7: Regenerate initramfs (single rebuild after all changes) ─
+# ── Step 8: Regenerate initramfs (single rebuild after all changes) ─
 if [ "$needs_initramfs_rebuild" = true ]; then
     print_info "Regenerating initramfs..."
     if command -v mkinitcpio &> /dev/null; then

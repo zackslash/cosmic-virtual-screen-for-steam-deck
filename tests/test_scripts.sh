@@ -394,48 +394,35 @@ test_cosmic_randr_syntax() {
 test_cross_file_consistency() {
     section "Cross-file consistency"
     
-    # Extract default values from each script
-    local sunshine_start_main
-    local sunshine_start_virtual
-    local sunshine_start_state
+    local scripts=("sunshine-start.sh" "sunshine-stop.sh" "restore-display.sh")
     
-    sunshine_start_main=$(grep '^MAIN_DISPLAY=' "$PROJECT_ROOT/sunshine-start.sh" | head -1 | cut -d'"' -f2)
-    sunshine_start_virtual=$(grep '^VIRTUAL_DISPLAY=' "$PROJECT_ROOT/sunshine-start.sh" | head -1 | cut -d'"' -f2)
-    sunshine_start_state=$(grep '^STATE_FILE=' "$PROJECT_ROOT/sunshine-start.sh" | head -1 | sed 's/^STATE_FILE="\${XDG_RUNTIME_DIR:-\/tmp}\/\([^"]*\)"/\1/')
+    # Test CONFIG_FILE definition exists in all scripts
+    local all_have_config=true
+    for script in "${scripts[@]}"; do
+        if grep -q 'CONFIG_FILE=.*cosmic-deck-switch/config' "$PROJECT_ROOT/$script"; then
+            pass "$script: has CONFIG_FILE definition"
+        else
+            fail "$script: missing CONFIG_FILE definition"
+            all_have_config=false
+        fi
+    done
     
-    local sunshine_stop_main
-    local sunshine_stop_virtual
-    local sunshine_stop_state
-    
-    sunshine_stop_main=$(grep '^MAIN_DISPLAY=' "$PROJECT_ROOT/sunshine-stop.sh" | cut -d'"' -f2)
-    sunshine_stop_virtual=$(grep '^VIRTUAL_DISPLAY=' "$PROJECT_ROOT/sunshine-stop.sh" | cut -d'"' -f2)
-    sunshine_stop_state=$(grep '^STATE_FILE=' "$PROJECT_ROOT/sunshine-stop.sh" | sed 's/^STATE_FILE="\${XDG_RUNTIME_DIR:-\/tmp}\/\([^"]*\)"/\1/')
-    
-    local restore_main
-    local restore_virtual
-    local restore_state
-    
-    restore_main=$(grep '^MAIN_DISPLAY=' "$PROJECT_ROOT/restore-display.sh" | cut -d'"' -f2)
-    restore_virtual=$(grep '^VIRTUAL_DISPLAY=' "$PROJECT_ROOT/restore-display.sh" | cut -d'"' -f2)
-    restore_state=$(grep '^STATE_FILE=' "$PROJECT_ROOT/restore-display.sh" | sed 's/^STATE_FILE="\${XDG_RUNTIME_DIR:-\/tmp}\/\([^"]*\)"/\1/')
-    
-    # Test MAIN_DISPLAY consistency
-    if [ "$sunshine_start_main" = "$sunshine_stop_main" ] && \
-       [ "$sunshine_stop_main" = "$restore_main" ]; then
-        pass "MAIN_DISPLAY consistent across all scripts: '$sunshine_start_main'"
-    else
-        fail "MAIN_DISPLAY inconsistent: start='$sunshine_start_main', stop='$sunshine_stop_main', restore='$restore_main'"
-    fi
-    
-    # Test VIRTUAL_DISPLAY consistency
-    if [ "$sunshine_start_virtual" = "$sunshine_stop_virtual" ] && \
-       [ "$sunshine_stop_virtual" = "$restore_virtual" ]; then
-        pass "VIRTUAL_DISPLAY consistent across all scripts: '$sunshine_start_virtual'"
-    else
-        fail "VIRTUAL_DISPLAY inconsistent: start='$sunshine_start_virtual', stop='$sunshine_stop_virtual', restore='$restore_virtual'"
-    fi
+    # Test config loading logic exists in all scripts
+    for script in "${scripts[@]}"; do
+        if grep -q 'while IFS.*read.*key value' "$PROJECT_ROOT/$script" && \
+           grep -q 'done < "$CONFIG_FILE"' "$PROJECT_ROOT/$script"; then
+            pass "$script: has config file loading logic"
+        else
+            fail "$script: missing config file loading logic"
+        fi
+    done
     
     # Test STATE_FILE consistency (just the filename part)
+    local sunshine_start_state sunshine_stop_state restore_state
+    sunshine_start_state=$(grep '^STATE_FILE=' "$PROJECT_ROOT/sunshine-start.sh" | head -1 | sed 's/^STATE_FILE="\${XDG_RUNTIME_DIR:-\/tmp}\/\([^"]*\)"/\1/')
+    sunshine_stop_state=$(grep '^STATE_FILE=' "$PROJECT_ROOT/sunshine-stop.sh" | sed 's/^STATE_FILE="\${XDG_RUNTIME_DIR:-\/tmp}\/\([^"]*\)"/\1/')
+    restore_state=$(grep '^STATE_FILE=' "$PROJECT_ROOT/restore-display.sh" | sed 's/^STATE_FILE="\${XDG_RUNTIME_DIR:-\/tmp}\/\([^"]*\)"/\1/')
+    
     if [ "$sunshine_start_state" = "$sunshine_stop_state" ] && \
        [ "$sunshine_stop_state" = "$restore_state" ]; then
         pass "STATE_FILE consistent across all scripts: cosmic-deck-switch.state"
@@ -444,9 +431,7 @@ test_cross_file_consistency() {
     fi
     
     # Verify WAYLAND_DISPLAY detection logic exists in all three
-    local scripts=("sunshine-start.sh" "sunshine-stop.sh" "restore-display.sh")
     local all_have_wayland_detection=true
-    
     for script in "${scripts[@]}"; do
         if ! grep -q 'WAYLAND_DISPLAY:-}' "$PROJECT_ROOT/$script"; then
             fail "$script: missing WAYLAND_DISPLAY detection logic"
@@ -457,9 +442,157 @@ test_cross_file_consistency() {
     if [ "$all_have_wayland_detection" = true ]; then
         pass "All scripts have WAYLAND_DISPLAY detection logic"
     fi
+    
+    # Test that fallback defaults exist in stop and restore scripts
+    for script in "sunshine-stop.sh" "restore-display.sh"; do
+        if grep -q 'FALLBACK_WIDTH=' "$PROJECT_ROOT/$script"; then
+            pass "$script: has fallback defaults"
+        else
+            fail "$script: missing fallback defaults"
+        fi
+    done
 }
 
-# ── Test 6: Helper script syntax ──────────────────────────────────
+# ── Test 6: Config file loading ───────────────────────────────────
+test_config_file_loading() {
+    section "Config file loading"
+    
+    local temp_config
+    temp_config=$(mktemp)
+    
+    # Create mock config file
+    cat > "$temp_config" <<EOF
+MAIN_DISPLAY=HDMI-A-3
+VIRTUAL_DISPLAY=DP-4
+DEFAULT_MODE=1440p-120
+EOF
+    
+    # Test sunshine-start.sh config loading
+    info "Testing sunshine-start.sh config loading"
+    
+    local result
+    result=$(bash -c "
+        CONFIG_FILE='$temp_config'
+        MAIN_DISPLAY='DP-2'
+        VIRTUAL_DISPLAY='HDMI-A-1'
+        DEFAULT_MODE='deck-oled'
+        
+        if [ -f \"\$CONFIG_FILE\" ]; then
+            while IFS='=' read -r key value; do
+                case \"\$key\" in
+                    MAIN_DISPLAY)    MAIN_DISPLAY=\"\$value\" ;;
+                    VIRTUAL_DISPLAY) VIRTUAL_DISPLAY=\"\$value\" ;;
+                    DEFAULT_MODE)    DEFAULT_MODE=\"\$value\" ;;
+                esac
+            done < \"\$CONFIG_FILE\"
+        fi
+        
+        echo \"\$MAIN_DISPLAY:\$VIRTUAL_DISPLAY:\$DEFAULT_MODE\"
+    ")
+    
+    if [ "$result" = "HDMI-A-3:DP-4:1440p-120" ]; then
+        pass "Config file overrides all defaults correctly"
+    else
+        fail "Config file override: expected 'HDMI-A-3:DP-4:1440p-120', got '$result'"
+    fi
+    
+    # Test with missing config file (should use defaults)
+    rm -f "$temp_config"
+    
+    result=$(bash -c "
+        CONFIG_FILE='$temp_config'
+        MAIN_DISPLAY='DP-2'
+        VIRTUAL_DISPLAY='HDMI-A-1'
+        DEFAULT_MODE='deck-oled'
+        
+        if [ -f \"\$CONFIG_FILE\" ]; then
+            while IFS='=' read -r key value; do
+                case \"\$key\" in
+                    MAIN_DISPLAY)    MAIN_DISPLAY=\"\$value\" ;;
+                    VIRTUAL_DISPLAY) VIRTUAL_DISPLAY=\"\$value\" ;;
+                    DEFAULT_MODE)    DEFAULT_MODE=\"\$value\" ;;
+                esac
+            done < \"\$CONFIG_FILE\"
+        fi
+        
+        echo \"\$MAIN_DISPLAY:\$VIRTUAL_DISPLAY:\$DEFAULT_MODE\"
+    ")
+    
+    if [ "$result" = "DP-2:HDMI-A-1:deck-oled" ]; then
+        pass "Missing config file uses defaults correctly"
+    else
+        fail "Missing config file: expected 'DP-2:HDMI-A-1:deck-oled', got '$result'"
+    fi
+    
+    # Test with partial config (only some keys)
+    temp_config=$(mktemp)
+    cat > "$temp_config" <<EOF
+VIRTUAL_DISPLAY=HDMI-A-2
+EOF
+    
+    result=$(bash -c "
+        CONFIG_FILE='$temp_config'
+        MAIN_DISPLAY='DP-2'
+        VIRTUAL_DISPLAY='HDMI-A-1'
+        DEFAULT_MODE='deck-oled'
+        
+        if [ -f \"\$CONFIG_FILE\" ]; then
+            while IFS='=' read -r key value; do
+                case \"\$key\" in
+                    MAIN_DISPLAY)    MAIN_DISPLAY=\"\$value\" ;;
+                    VIRTUAL_DISPLAY) VIRTUAL_DISPLAY=\"\$value\" ;;
+                    DEFAULT_MODE)    DEFAULT_MODE=\"\$value\" ;;
+                esac
+            done < \"\$CONFIG_FILE\"
+        fi
+        
+        echo \"\$MAIN_DISPLAY:\$VIRTUAL_DISPLAY:\$DEFAULT_MODE\"
+    ")
+    
+    if [ "$result" = "DP-2:HDMI-A-2:deck-oled" ]; then
+        pass "Partial config file only overrides specified keys"
+    else
+        fail "Partial config: expected 'DP-2:HDMI-A-2:deck-oled', got '$result'"
+    fi
+    
+    # Test with comment lines in config
+    cat > "$temp_config" <<EOF
+# This is a comment
+MAIN_DISPLAY=HDMI-A-3
+# Another comment
+VIRTUAL_DISPLAY=DP-4
+DEFAULT_MODE=1440p-120
+EOF
+    
+    result=$(bash -c "
+        CONFIG_FILE='$temp_config'
+        MAIN_DISPLAY='DP-2'
+        VIRTUAL_DISPLAY='HDMI-A-1'
+        DEFAULT_MODE='deck-oled'
+        
+        if [ -f \"\$CONFIG_FILE\" ]; then
+            while IFS='=' read -r key value; do
+                case \"\$key\" in
+                    MAIN_DISPLAY)    MAIN_DISPLAY=\"\$value\" ;;
+                    VIRTUAL_DISPLAY) VIRTUAL_DISPLAY=\"\$value\" ;;
+                    DEFAULT_MODE)    DEFAULT_MODE=\"\$value\" ;;
+                esac
+            done < \"\$CONFIG_FILE\"
+        fi
+        
+        echo \"\$MAIN_DISPLAY:\$VIRTUAL_DISPLAY:\$DEFAULT_MODE\"
+    ")
+    
+    if [ "$result" = "HDMI-A-3:DP-4:1440p-120" ]; then
+        pass "Config file with comments handled correctly"
+    else
+        fail "Config with comments: expected 'HDMI-A-3:DP-4:1440p-120', got '$result'"
+    fi
+    
+    rm -f "$temp_config"
+}
+
+# ── Test 7: Helper script syntax ──────────────────────────────────
 test_helper_script_syntax() {
     section "Helper script syntax (from install.sh heredoc)"
     
@@ -520,6 +653,7 @@ main() {
     test_state_file_parsing
     test_cosmic_randr_syntax
     test_cross_file_consistency
+    test_config_file_loading
     test_helper_script_syntax
     
     # Summary

@@ -17,9 +17,20 @@
 set -euo pipefail
 
 # ── Configuration ──────────────────────────────────────────────────
-# Edit these to match your setup (must match sunshine-start.sh)
+# Loaded from config file (written by install.sh), with fallback defaults
+CONFIG_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/cosmic-deck-switch/config"
+
 MAIN_DISPLAY="DP-2"
 VIRTUAL_DISPLAY="HDMI-A-1"
+
+if [ -f "$CONFIG_FILE" ]; then
+    while IFS='=' read -r key value; do
+        case "$key" in
+            MAIN_DISPLAY)    MAIN_DISPLAY="$value" ;;
+            VIRTUAL_DISPLAY) VIRTUAL_DISPLAY="$value" ;;
+        esac
+    done < "$CONFIG_FILE"
+fi
 
 # Fallback values if state file is missing (your primary monitor's native settings)
 # Note: refresh is in millihertz (same unit as KDL state file) for consistency

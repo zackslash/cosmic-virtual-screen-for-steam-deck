@@ -16,9 +16,20 @@
 set -euo pipefail
 
 # ── Configuration ──────────────────────────────────────────────────
-# Edit these to match your setup
+# Loaded from config file (written by install.sh), with fallback defaults
+CONFIG_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/cosmic-deck-switch/config"
+
 MAIN_DISPLAY="DP-2"
 VIRTUAL_DISPLAY="HDMI-A-1"
+
+if [ -f "$CONFIG_FILE" ]; then
+    while IFS='=' read -r key value; do
+        case "$key" in
+            MAIN_DISPLAY)    MAIN_DISPLAY="$value" ;;
+            VIRTUAL_DISPLAY) VIRTUAL_DISPLAY="$value" ;;
+        esac
+    done < "$CONFIG_FILE"
+fi
 
 # Fallback values if no state file exists (your primary monitor's native settings)
 # Refresh is in millihertz (KDL format) — converted to Hz automatically

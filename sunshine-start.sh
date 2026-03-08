@@ -14,16 +14,28 @@
 #
 #   Modes: deck-lcd, deck-oled, 1200p, 1200p-90, 1200p-120,
 #          1440p, 1440p-120, 1600p, 1600p-90
-#   Default: deck-oled (1280x800@90Hz)
+#   Default: deck-oled (configurable via ~/.config/cosmic-deck-switch/config)
 #
 
 set -euo pipefail
 
 # ── Configuration ──────────────────────────────────────────────────
-# Edit these to match your setup
+# Loaded from config file (written by install.sh), with fallback defaults
+CONFIG_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/cosmic-deck-switch/config"
+
 MAIN_DISPLAY="DP-2"
 VIRTUAL_DISPLAY="HDMI-A-1"
-DEFAULT_MODE="deck-oled"
+DEFAULT_MODE="deck-oled-2x"
+
+if [ -f "$CONFIG_FILE" ]; then
+    while IFS='=' read -r key value; do
+        case "$key" in
+            MAIN_DISPLAY)    MAIN_DISPLAY="$value" ;;
+            VIRTUAL_DISPLAY) VIRTUAL_DISPLAY="$value" ;;
+            DEFAULT_MODE)    DEFAULT_MODE="$value" ;;
+        esac
+    done < "$CONFIG_FILE"
+fi
 
 # State file to remember what was running before
 STATE_FILE="${XDG_RUNTIME_DIR:-/tmp}/cosmic-deck-switch.state"

@@ -49,9 +49,16 @@ The scripts automatically switch between your main display and the virtual displ
 
 ### Setup
 
-1. **Edit `sunshine-start.sh` and `sunshine-stop.sh`** — set `MAIN_DISPLAY` to your primary monitor (e.g. `DP-2`) and `VIRTUAL_DISPLAY` to the dummy plug connector (e.g. `HDMI-A-1`). Run `cosmic-randr list` to see your connector names.
+The installer automatically writes your display configuration to `~/.config/cosmic-deck-switch/config`. To change settings later, edit this file directly:
 
-2. **Add to Sunshine** via the web UI (`https://localhost:47990`) or `~/.config/sunshine/apps.json`:
+```bash
+# ~/.config/cosmic-deck-switch/config
+MAIN_DISPLAY=DP-2
+VIRTUAL_DISPLAY=HDMI-A-2
+DEFAULT_MODE=deck-oled-2x
+```
+
+Add to Sunshine via the web UI (`https://localhost:47990`) or `~/.config/sunshine/apps.json`:
 
    ```json
    {
