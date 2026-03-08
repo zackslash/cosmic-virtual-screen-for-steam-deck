@@ -19,7 +19,9 @@ cd cosmic-virtual-screen-for-steam-deck
 sudo ./install.sh
 ```
 
-The installer detects your displays, generates a custom EDID, installs it to firmware + initramfs, configures your bootloader (systemd-boot or GRUB), and installs the `cosmic-deck-switch` helper. **Reboot after installation.**
+The installer lists all display outputs (e.g. `DP-2`, `HDMI-A-1`) and prompts you to select the connector where your dummy plug is connected. It then generates a custom EDID, installs it to firmware + initramfs, configures your bootloader (systemd-boot or GRUB), and installs the `cosmic-deck-switch` helper. **Reboot after installation.**
+
+> **Tip:** Plug in the dummy adapter first, then run the installer — the HDMI port will show as connected, making it easy to identify.
 
 To uninstall: `sudo ./uninstall.sh` then reboot.
 
@@ -47,7 +49,7 @@ The scripts automatically switch between your main display and the virtual displ
 
 ### Setup
 
-1. **Edit `sunshine-start.sh` and `sunshine-stop.sh`** — set `MAIN_DISPLAY`, `VIRTUAL_DISPLAY`, and fallback values for your setup.
+1. **Edit `sunshine-start.sh` and `sunshine-stop.sh`** — set `MAIN_DISPLAY` to your primary monitor (e.g. `DP-2`) and `VIRTUAL_DISPLAY` to the dummy plug connector (e.g. `HDMI-A-1`). Run `cosmic-randr list` to see your connector names.
 
 2. **Add to Sunshine** via the web UI (`https://localhost:47990`) or `~/.config/sunshine/apps.json`:
 
