@@ -1,0 +1,37 @@
+# Dockerfile.test — Minimal test environment for cosmic-virtual-screen-for-steam-deck
+#
+# Based on Arch Linux, installs minimal dependencies for testing shell scripts
+# and Python code without modifying the system.
+
+FROM archlinux:latest
+
+# Update package database and install test dependencies
+RUN pacman -Syu --noconfirm && \
+    pacman -S --noconfirm \
+        bash \
+        shellcheck \
+        python3 \
+        grep \
+        sed \
+        gawk && \
+    pacman -Scc --noconfirm
+
+# Create test user (non-root for safety)
+RUN useradd -m -s /bin/bash testuser
+
+# Set working directory
+WORKDIR /app
+
+# Copy project files
+COPY --chown=testuser:testuser . .
+
+# Switch to test user
+USER testuser
+
+# Run both test suites
+CMD set -e && \
+    echo "=== Running Python tests ===" && \
+    python3 -m unittest discover tests/ && \
+    echo && \
+    echo "=== Running shell script tests ===" && \
+    bash tests/test_scripts.sh

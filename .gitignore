@@ -1,0 +1,4 @@
+EDID/
+__pycache__/
+*.pyc
+*.backup.*
