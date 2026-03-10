@@ -211,9 +211,12 @@ prompt_hdr() {
     echo -e "${YELLOW}Enable HDR support?${NC}" >&2
     echo >&2
     echo "  HDR adds BT.2020 colorimetry and HDR10 Static Metadata to the EDID." >&2
-    echo "  When COSMIC adds HDR output support, Sunshine will be able to advertise" >&2
-    echo "  HDR to Moonlight clients automatically via the KMS connector property." >&2
-    echo "  Only enable if your Moonlight client and Sunshine version support HDR." >&2
+    echo >&2
+    echo -e "  ${YELLOW}Note: HDR streaming does not work yet.${NC}" >&2
+    echo "  COSMIC Desktop (v1.0.x) does not yet write HDR metadata to the DRM" >&2
+    echo "  connector, so Sunshine cannot advertise HDR to Moonlight clients." >&2
+    echo "  Enabling this future-proofs the EDID — no reinstall needed when" >&2
+    echo "  COSMIC adds HDR support." >&2
     echo >&2
     read -p "Enable HDR? [y/N]: " hdr_choice </dev/tty
     if [[ "$hdr_choice" =~ ^[Yy] ]]; then
