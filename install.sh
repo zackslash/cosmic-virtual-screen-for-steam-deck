@@ -73,6 +73,16 @@ check_dependencies() {
         print_info "The EDID will still be installed but you won't be able to use the mode switcher"
     fi
 
+    if ! command -v gamescope &> /dev/null; then
+        print_info "gamescope not found - the Gamescope HDR streaming variant will not be available"
+        print_info "Install with: sudo pacman -S gamescope  (optional, for HDR streaming)"
+    fi
+
+    if ! command -v seatd-launch &> /dev/null; then
+        print_info "seatd-launch not found - required alongside gamescope for HDR streaming"
+        print_info "Install with: sudo pacman -S seatd  (optional, for HDR streaming)"
+    fi
+
     if [ ${#missing[@]} -gt 0 ]; then
         print_error "Missing required dependencies: ${missing[*]}"
         print_info "Install with: sudo pacman -S ${missing[*]}"
@@ -171,21 +181,22 @@ detect_main_display() {
 }
 
 prompt_default_mode() {
-    echo -e "${YELLOW}Select a default streaming mode:${NC}"
-    echo
-    echo "  1) deck-lcd      1280x800@60Hz   (Steam Deck LCD native)"
-    echo "  2) deck-oled     1280x800@90Hz   (Steam Deck OLED native)"
-    echo "  3) deck-lcd-2x   2560x1600@60Hz  (Deck LCD supersampled)"
-    echo "  4) deck-oled-2x  2560x1600@90Hz  (Deck OLED supersampled)"
-    echo "  5) 1200p         1920x1200@60Hz"
-    echo "  6) 1200p-90      1920x1200@90Hz"
-    echo "  7) 1200p-120     1920x1200@120Hz"
-    echo "  8) 1440p         2560x1440@60Hz"
-    echo "  9) 1440p-120     2560x1440@120Hz"
-    echo " 10) 1600p         2560x1600@60Hz"
-    echo " 11) 1600p-90      2560x1600@90Hz"
-    echo
-    read -p "Choice [2]: " mode_choice
+    # UI output goes to stderr so $() capture only receives the mode name on stdout
+    echo -e "${YELLOW}Select a default streaming mode:${NC}" >&2
+    echo >&2
+    echo "  1) deck-lcd      1280x800@60Hz   (Steam Deck LCD native)" >&2
+    echo "  2) deck-oled     1280x800@90Hz   (Steam Deck OLED native)" >&2
+    echo "  3) deck-lcd-2x   2560x1600@60Hz  (Deck LCD supersampled)" >&2
+    echo "  4) deck-oled-2x  2560x1600@90Hz  (Deck OLED supersampled)" >&2
+    echo "  5) 1200p         1920x1200@60Hz" >&2
+    echo "  6) 1200p-90      1920x1200@90Hz" >&2
+    echo "  7) 1200p-120     1920x1200@120Hz" >&2
+    echo "  8) 1440p         2560x1440@60Hz" >&2
+    echo "  9) 1440p-120     2560x1440@120Hz" >&2
+    echo " 10) 1600p         2560x1600@60Hz" >&2
+    echo " 11) 1600p-90      2560x1600@90Hz" >&2
+    echo >&2
+    read -p "Choice [2]: " mode_choice <&1
 
     case "${mode_choice:-2}" in
         1)  echo "deck-lcd" ;;
@@ -200,16 +211,130 @@ prompt_default_mode() {
         10) echo "1600p" ;;
         11) echo "1600p-90" ;;
         *)
-            print_warning "Invalid choice, defaulting to deck-oled"
+            print_warning "Invalid choice, defaulting to deck-oled" >&2
             echo "deck-oled"
             ;;
     esac
+}
+
+prompt_hdr() {
+    # UI output goes to stderr so $() capture only receives "yes" or "no" on stdout
+    echo -e "${YELLOW}Enable HDR support?${NC}" >&2
+    echo >&2
+    echo "  HDR adds BT.2020 colorimetry and HDR10 Static Metadata to the EDID." >&2
+    echo "  Required for Sunshine's KMS backend to signal HDR to Moonlight clients." >&2
+    echo "  Only enable if your Moonlight client and Sunshine version support HDR." >&2
+    echo >&2
+    read -p "Enable HDR? [y/N]: " hdr_choice <&1
+    if [[ "$hdr_choice" =~ ^[Yy] ]]; then
+        echo "yes"
+    else
+        echo "no"
+    fi
+}
+
+prompt_chvt_sudoers() {
+    # UI output goes to stderr so $() capture only receives "yes" or "no" on stdout
+    echo -e "${YELLOW}Allow passwordless virtual terminal switching for Gamescope HDR?${NC}" >&2
+    echo >&2
+    echo "  The Gamescope HDR streaming variant needs to switch virtual terminals" >&2
+    echo "  when a stream ends, so your COSMIC desktop is restored automatically." >&2
+    echo "  This requires running 'chvt' (change virtual terminal) as root." >&2
+    echo >&2
+    echo "  Saying yes writes a single sudoers rule granting your user passwordless" >&2
+    echo "  access to /usr/bin/chvt only — nothing else. chvt can only switch the" >&2
+    echo "  active virtual terminal; it cannot read files, run commands, or escalate" >&2
+    echo "  privileges further. This is a minimal and safe permission." >&2
+    echo >&2
+    echo "  Saying no is fine — the Gamescope session will still work, but COSMIC" >&2
+    echo "  may not return to the foreground automatically when the stream ends." >&2
+    echo "  You can always run: sudo chvt 2  (or the VT number COSMIC is on)." >&2
+    echo >&2
+    read -p "Install chvt sudoers rule? [y/N]: " chvt_choice <&1
+    if [[ "$chvt_choice" =~ ^[Yy] ]]; then
+        echo "yes"
+    else
+        echo "no"
+    fi
+}
+
+install_chvt_sudoers() {
+    local real_user="${SUDO_USER:-$USER}"
+    local sudoers_file="/etc/sudoers.d/chvt"
+
+    if [ -f "$sudoers_file" ]; then
+        print_info "chvt sudoers rule already exists at $sudoers_file — skipping"
+        return
+    fi
+
+    echo "${real_user} ALL=(root) NOPASSWD: /usr/bin/chvt" > "$sudoers_file"
+    chmod 440 "$sudoers_file"
+
+    # Validate with visudo -c before trusting it
+    if visudo -c -f "$sudoers_file" &>/dev/null; then
+        print_success "chvt sudoers rule installed for user '$real_user'"
+    else
+        print_error "visudo validation failed — removing invalid sudoers file"
+        rm -f "$sudoers_file"
+    fi
+}
+
+prompt_seatd_launch_suid() {
+    # UI output goes to stderr so $() capture only receives "yes" or "no" on stdout
+    echo -e "${YELLOW}Make seatd-launch SUID root for Gamescope HDR?${NC}" >&2
+    echo >&2
+    echo "  The Gamescope HDR streaming variant launches gamescope via seatd-launch," >&2
+    echo "  which starts a private seat daemon and then drops to your normal user." >&2
+    echo "  This lets gamescope take DRM master while COSMIC is paused on another VT," >&2
+    echo "  without needing a full root shell." >&2
+    echo >&2
+    echo "  For seatd-launch to work it must be SUID root. This means the binary" >&2
+    echo "  /usr/bin/seatd-launch will run as root when invoked, but it immediately" >&2
+    echo "  drops privileges before executing gamescope as your normal user." >&2
+    echo "  The seatd project is a minimal, security-conscious implementation;" >&2
+    echo "  SUID is its intended and documented deployment model." >&2
+    echo >&2
+    echo "  Saying no is fine — the standard COSMIC streaming path is unaffected." >&2
+    echo "  You can set SUID manually later with:" >&2
+    echo "    sudo chmod u+s /usr/bin/seatd-launch" >&2
+    echo >&2
+    read -p "Set seatd-launch SUID? [y/N]: " seatd_choice <&1
+    if [[ "$seatd_choice" =~ ^[Yy] ]]; then
+        echo "yes"
+    else
+        echo "no"
+    fi
+}
+
+install_seatd_launch_suid() {
+    local seatd_bin="/usr/bin/seatd-launch"
+
+    if [ ! -f "$seatd_bin" ]; then
+        print_warning "seatd-launch not found at $seatd_bin — skipping"
+        print_info "Install seatd with: sudo pacman -S seatd"
+        return
+    fi
+
+    # Check if already SUID
+    if [ -u "$seatd_bin" ]; then
+        print_info "seatd-launch is already SUID root — skipping"
+        return
+    fi
+
+    chmod u+s "$seatd_bin"
+
+    if [ -u "$seatd_bin" ]; then
+        print_success "seatd-launch set SUID root: $seatd_bin"
+    else
+        print_error "Failed to set SUID on $seatd_bin"
+    fi
 }
 
 write_config_file() {
     local main_display="$1"
     local virtual_display="$2"
     local default_mode="$3"
+    local hdr_enabled="${4:-no}"
 
     # Determine the real user's home directory (installer runs as root via sudo)
     local real_home
@@ -230,6 +355,7 @@ write_config_file() {
 MAIN_DISPLAY=$main_display
 VIRTUAL_DISPLAY=$virtual_display
 DEFAULT_MODE=$default_mode
+HDR_ENABLED=$hdr_enabled
 EOF
 
     # Fix ownership if running via sudo
@@ -241,9 +367,11 @@ EOF
     print_info "  Main display:    $main_display"
     print_info "  Virtual display: $virtual_display"
     print_info "  Default mode:    $default_mode"
+    print_info "  HDR enabled:     $hdr_enabled"
 }
 
 generate_edid() {
+    local hdr_enabled="${1:-no}"
     print_info "Generating EDID file..."
 
     if [ ! -f "$SCRIPT_DIR/edid_generator.py" ]; then
@@ -251,11 +379,19 @@ generate_edid() {
         exit 1
     fi
 
-    python3 "$SCRIPT_DIR/edid_generator.py" "$SCRIPT_DIR/$EDID_FILENAME"
+    local hdr_flag=""
+    if [ "$hdr_enabled" = "yes" ]; then
+        hdr_flag="--hdr"
+    fi
+
+    python3 "$SCRIPT_DIR/edid_generator.py" $hdr_flag "$SCRIPT_DIR/$EDID_FILENAME"
 
     if [ -f "$SCRIPT_DIR/$EDID_FILENAME" ]; then
         local size=$(stat -c%s "$SCRIPT_DIR/$EDID_FILENAME")
         print_success "EDID file generated: $EDID_FILENAME ($size bytes)"
+        if [ "$hdr_enabled" = "yes" ]; then
+            print_info "HDR mode: ENABLED (BT.2020 colorimetry + HDR10 Static Metadata)"
+        fi
     else
         print_error "Failed to generate EDID file"
         exit 1
@@ -661,6 +797,14 @@ HELPEREOF
     chmod +x "$helper_path"
     print_success "Helper script installed: $helper_path"
     print_info "Usage: cosmic-deck-switch help"
+
+    # Ensure gamescope streaming scripts are executable
+    for gs_script in "$SCRIPT_DIR/sunshine-start-gamescope.sh" "$SCRIPT_DIR/sunshine-stop-gamescope.sh"; do
+        if [ -f "$gs_script" ]; then
+            chmod +x "$gs_script"
+            print_success "Made executable: $gs_script"
+        fi
+    done
 }
 
 show_next_steps() {
@@ -694,6 +838,13 @@ show_next_steps() {
 
     print_info "To uninstall:"
     echo "  sudo $SCRIPT_DIR/uninstall.sh"
+    echo
+
+    print_info "Gamescope HDR streaming (optional alternative):"
+    echo "  Use the 'Steam Big Picture (Gamescope HDR)' app in Sunshine for HDR streaming."
+    echo "  This runs gamescope as a standalone KMS compositor, bypassing COSMIC's"
+    echo "  current lack of HDR support. See README.md for full setup instructions."
+    echo "  Requirements: gamescope, seatd (with seatd-launch SUID), chvt sudoers rule."
     echo
 }
 
@@ -773,6 +924,39 @@ main() {
     print_info "Default mode: $default_mode"
     echo
 
+    # Prompt for HDR
+    local hdr_enabled
+    hdr_enabled=$(prompt_hdr)
+    echo
+    if [ "$hdr_enabled" = "yes" ]; then
+        print_info "HDR: ENABLED"
+    else
+        print_info "HDR: disabled"
+    fi
+    echo
+
+    # Prompt for chvt sudoers rule (needed for Gamescope HDR VT switching)
+    local chvt_sudoers
+    chvt_sudoers=$(prompt_chvt_sudoers)
+    echo
+    if [ "$chvt_sudoers" = "yes" ]; then
+        print_info "chvt sudoers: will install"
+    else
+        print_info "chvt sudoers: skipped"
+    fi
+    echo
+
+    # Prompt for seatd-launch SUID (needed for Gamescope HDR to acquire DRM master)
+    local seatd_suid
+    seatd_suid=$(prompt_seatd_launch_suid)
+    echo
+    if [ "$seatd_suid" = "yes" ]; then
+        print_info "seatd-launch SUID: will set"
+    else
+        print_info "seatd-launch SUID: skipped"
+    fi
+    echo
+
     # Confirm before making system changes
     print_warning "This will modify: mkinitcpio.conf, bootloader config, initramfs"
     read -p "Proceed with connector '$connector'? [y/N]: " confirm
@@ -783,7 +967,7 @@ main() {
     echo
 
     # Step 1: Generate EDID
-    generate_edid
+    generate_edid "$hdr_enabled"
     echo
 
     # Step 2: Install EDID to firmware
@@ -803,8 +987,20 @@ main() {
     echo
 
     # Step 6: Write config file
-    write_config_file "$main_display" "$connector" "$default_mode"
+    write_config_file "$main_display" "$connector" "$default_mode" "$hdr_enabled"
     echo
+
+    # Step 7: Install chvt sudoers rule (optional, for Gamescope HDR VT switching)
+    if [ "$chvt_sudoers" = "yes" ]; then
+        install_chvt_sudoers
+        echo
+    fi
+
+    # Step 8: Set seatd-launch SUID root (optional, for Gamescope HDR DRM master)
+    if [ "$seatd_suid" = "yes" ]; then
+        install_seatd_launch_suid
+        echo
+    fi
 
     # Done
     show_next_steps "$connector"
