@@ -215,7 +215,7 @@ prompt_hdr() {
     echo "  HDR to Moonlight clients automatically via the KMS connector property." >&2
     echo "  Only enable if your Moonlight client and Sunshine version support HDR." >&2
     echo >&2
-    read -p "Enable HDR? [y/N]: " hdr_choice <&1
+    read -p "Enable HDR? [y/N]: " hdr_choice </dev/tty
     if [[ "$hdr_choice" =~ ^[Yy] ]]; then
         echo "yes"
     else
@@ -272,12 +272,12 @@ generate_edid() {
         exit 1
     fi
 
-    local hdr_flag=""
+    local hdr_flag=()
     if [ "$hdr_enabled" = "yes" ]; then
-        hdr_flag="--hdr"
+        hdr_flag=(--hdr)
     fi
 
-    python3 "$SCRIPT_DIR/edid_generator.py" $hdr_flag "$SCRIPT_DIR/$EDID_FILENAME"
+    python3 "$SCRIPT_DIR/edid_generator.py" "${hdr_flag[@]}" "$SCRIPT_DIR/$EDID_FILENAME"
 
     if [ -f "$SCRIPT_DIR/$EDID_FILENAME" ]; then
         local size=$(stat -c%s "$SCRIPT_DIR/$EDID_FILENAME")
