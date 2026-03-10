@@ -29,16 +29,21 @@ class EDIDGenerator:
     # EDID header (fixed)
     EDID_HEADER = bytes([0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00])
 
-    def __init__(self, manufacturer_id: str = "VRT", product_code: int = 0x1234):
+    def __init__(self, manufacturer_id: str = "VRT", product_code: int = 0x1234,
+             hdr: bool = False):
         """
         Initialize EDID generator
 
         Args:
             manufacturer_id: 3-letter manufacturer ID (e.g., "VRT" for Virtual)
             product_code: Product code (16-bit)
+            hdr: If True, include HDR10 metadata (CTA-861 HDR Static Metadata,
+                 BT.2020 colorimetry, wide-gamut chromaticity). Required for
+                 Sunshine's KMS backend to advertise HDR to Moonlight clients.
         """
         self.manufacturer_id = manufacturer_id
         self.product_code = product_code
+        self.hdr = hdr
         self.resolutions: List[Resolution] = []
 
     def add_resolution(self, width: int, height: int, refresh_rate: int, name: str = ""):
@@ -188,6 +193,63 @@ class EDIDGenerator:
     def _calculate_checksum(self, block: bytearray) -> int:
         return (256 - sum(block)) % 256
 
+    def _create_colorimetry_db(self) -> bytes:
+        """
+        Create CTA-861 Colorimetry Data Block (Tag 0x07, Extended Tag 0x05).
+        Advertises BT.2020 RGB and BT.2020 YCC support — required for HDR10.
+        """
+        # Extended Data Block header:
+        #   Byte 0: (Tag=7 << 5) | length=3  -> 0xE3
+        #   Byte 1: Extended Tag 0x05 (Colorimetry)
+        #   Byte 2: Colorimetry flags
+        #     Bit 7: BT2020RGB  (1)
+        #     Bit 6: BT2020YCC  (1)
+        #     Bit 5: BT2020cYCC (0)
+        #     Bit 4: opRGB      (0)
+        #     Bit 3: opYCC601   (0)
+        #     Bit 2: sYCC601    (0)
+        #     Bit 1: xvYCC709   (0)
+        #     Bit 0: xvYCC601   (0)
+        #   Byte 3: Gamut Metadata flags (0x00)
+        colorimetry_flags = 0b11000000  # BT2020RGB + BT2020YCC
+        return bytes([0xE3, 0x05, colorimetry_flags, 0x00])
+
+    def _create_hdr_static_metadata_db(self) -> bytes:
+        """
+        Create CTA-861 HDR Static Metadata Data Block (Tag 0x07, Extended Tag 0x06).
+        This is the critical block that tells Sunshine (via DRM) the display supports
+        HDR10, enabling HDR_OUTPUT_METADATA to be set on the KMS connector.
+
+        Steam Deck OLED specs used as reference:
+          - Max luminance: ~1000 nits
+          - Max frame-average luminance: ~600 nits
+          - Min luminance: ~0.005 nits
+        """
+        # Extended Data Block header:
+        #   Byte 0: (Tag=7 << 5) | length=6  -> 0xE6
+        #   Byte 1: Extended Tag 0x06 (HDR Static Metadata)
+        #   Byte 2: Electro-Optical Transfer Function (EOTF)
+        #     Bit 0: Traditional SDR gamma (1)
+        #     Bit 1: Traditional HDR gamma (0)
+        #     Bit 2: SMPTE ST 2084 / HDR10 (1)
+        #     Bit 3: Hybrid Log-Gamma / HLG (0)
+        eotf = 0b00000101  # SDR + HDR10/PQ
+        #   Byte 3: Static Metadata Descriptor IDs supported
+        #     Bit 0: Type 1 (1) — the only defined type
+        metadata_type = 0x01
+        #   Bytes 4-6: Luminance values (encoded per CTA-861-G spec)
+        #     Max Luminance = (50 * 2^(val/32)) nits
+        #       1000 nits -> val = 32 * log2(1000/50) = 32 * log2(20) ≈ 138 (0x8A)
+        #     Max Frame-Average Luminance: same encoding
+        #       600 nits -> val = 32 * log2(600/50) = 32 * log2(12) ≈ 115 (0x73)
+        #     Min Luminance = (actual_max_lum * (val/255)^2) / 100 nits
+        #       actual max from 0x8A = 50 * 2^(138/32) ≈ 997 nits
+        #       0.005 nits: val = 255 * sqrt(0.005*100/997) ≈ 5.7 → 0x06
+        max_lum = 0x8A      # ~1000 nits (decodes to ~997)
+        max_fall = 0x73     # ~600 nits frame-average (decodes to ~599)
+        min_lum = 0x06      # ~0.005 nits (decodes to ~0.0055)
+        return bytes([0xE6, 0x06, eotf, metadata_type, max_lum, max_fall, min_lum])
+
     def _create_hdmi_vsdb(self) -> bytes:
         """
         Create HDMI Vendor Specific Data Block
@@ -231,6 +293,18 @@ class EDIDGenerator:
         hdmi_vsdb = self._create_hdmi_vsdb()
         ext[cursor:cursor+len(hdmi_vsdb)] = hdmi_vsdb
         cursor += len(hdmi_vsdb)
+
+        # HDR data blocks (Colorimetry + HDR Static Metadata)
+        # These tell DRM/KMS that the display supports HDR10, causing it to expose
+        # the HDR_OUTPUT_METADATA property on the connector, which Sunshine reads.
+        if self.hdr:
+            colorimetry_db = self._create_colorimetry_db()
+            ext[cursor:cursor+len(colorimetry_db)] = colorimetry_db
+            cursor += len(colorimetry_db)
+
+            hdr_db = self._create_hdr_static_metadata_db()
+            ext[cursor:cursor+len(hdr_db)] = hdr_db
+            cursor += len(hdr_db)
 
         # Byte 2: DTD Offset (DTDs start after data blocks)
         ext[2] = cursor
@@ -289,8 +363,14 @@ class EDIDGenerator:
         edid[18] = 1
         edid[19] = 4
 
-        # Byte 20: Video input definition (digital)
-        edid[20] = 0x80
+        # Byte 20: Video input (digital, 10-bit color depth for HDR; 8-bit for SDR)
+        # Bit 7: 1 = Digital input
+        # Bits 6-4: Color bit depth (010 = 8bpc, 011 = 10bpc)
+        # Bits 3-0: Interface type (0000 = undefined — correct for a virtual display)
+        if self.hdr:
+            edid[20] = 0xB0  # Digital, 10bpc, undefined interface (0b10110000)
+        else:
+            edid[20] = 0x80  # Digital, undefined depth
 
         # Bytes 21-22: Screen size (0 = undefined/virtual)
         edid[21] = 0
@@ -302,8 +382,45 @@ class EDIDGenerator:
         # Byte 24: Feature support (RGB color, preferred timing in DTD1)
         edid[24] = 0x0A
 
-        # Bytes 25-34: Chromaticity (unspecified for virtual)
-        edid[25:35] = bytes(10)
+        # Bytes 25-34: Chromaticity coordinates (10 bytes)
+        # Encoding: each coordinate is a 10-bit fixed-point value where
+        #   encoded = round(coordinate * 1024)  (range 0..1023)
+        # Byte 25 = low 2 bits of Rx,Ry,Gx,Gy; byte 26 = low 2 bits of Bx,By,Wx,Wy
+        # Bytes 27-34 = upper 8 bits of Rx,Ry,Gx,Gy,Bx,By,Wx,Wy
+        if self.hdr:
+            # DCI-P3 primaries (Steam Deck OLED approximate), D65 white point
+            #   Red:   (0.680, 0.320) -> round(x*1024): Rx=696, Ry=328
+            #   Green: (0.265, 0.690) -> Gx=271, Gy=707
+            #   Blue:  (0.150, 0.060) -> Bx=154, By=61
+            #   White (D65): (0.3127, 0.3290) -> Wx=320, Wy=337
+            Rx, Ry = 696, 328
+            Gx, Gy = 271, 707
+            Bx, By = 154, 61
+            Wx, Wy = 320, 337
+        else:
+            # sRGB/Rec.709 primaries, D65 white point
+            #   Red:   (0.640, 0.330) -> Rx=655, Ry=338
+            #   Green: (0.300, 0.600) -> Gx=307, Gy=614
+            #   Blue:  (0.150, 0.060) -> Bx=154, By=61
+            #   White (D65): (0.3127, 0.3290) -> Wx=320, Wy=337
+            Rx, Ry = 655, 338
+            Gx, Gy = 307, 614
+            Bx, By = 154, 61
+            Wx, Wy = 320, 337
+
+        # Byte 25: bits [1:0] of Rx, Ry, Gx, Gy packed
+        edid[25] = ((Rx & 0x03) << 6) | ((Ry & 0x03) << 4) | ((Gx & 0x03) << 2) | (Gy & 0x03)
+        # Byte 26: bits [1:0] of Bx, By, Wx, Wy packed
+        edid[26] = ((Bx & 0x03) << 6) | ((By & 0x03) << 4) | ((Wx & 0x03) << 2) | (Wy & 0x03)
+        # Bytes 27-34: high 8 bits of each coordinate
+        edid[27] = (Rx >> 2) & 0xFF
+        edid[28] = (Ry >> 2) & 0xFF
+        edid[29] = (Gx >> 2) & 0xFF
+        edid[30] = (Gy >> 2) & 0xFF
+        edid[31] = (Bx >> 2) & 0xFF
+        edid[32] = (By >> 2) & 0xFF
+        edid[33] = (Wx >> 2) & 0xFF
+        edid[34] = (Wy >> 2) & 0xFF
 
         # Bytes 35-37: Established timings (none)
         edid[35:38] = b'\x00\x00\x00'
@@ -402,9 +519,9 @@ class EDIDGenerator:
             print(f"  {i}. {res.name}")
 
 
-def create_steam_deck_edid(output_file: str = "steamdeck_virtual.bin"):
+def create_steam_deck_edid(output_file: str = "steamdeck_virtual.bin", hdr: bool = False):
     """Create EDID with all Steam Deck-optimized resolutions"""
-    generator = EDIDGenerator(manufacturer_id="VRT", product_code=0x5344)
+    generator = EDIDGenerator(manufacturer_id="VRT", product_code=0x5344, hdr=hdr)
 
     # Native Steam Deck resolutions (16:10)
     generator.add_resolution(1280, 800, 60, "1280x800@60Hz")
@@ -429,10 +546,15 @@ def create_steam_deck_edid(output_file: str = "steamdeck_virtual.bin"):
 
 def main():
     """Main entry point"""
-    if len(sys.argv) > 1:
-        output_file = sys.argv[1]
-    else:
-        output_file = "steamdeck_virtual.bin"
+    import argparse
+    parser = argparse.ArgumentParser(description="EDID Generator for Steam Deck Virtual Screens (COSMIC Desktop Edition)")
+    parser.add_argument("output", nargs="?", default="steamdeck_virtual.bin",
+                        help="Output filename (default: steamdeck_virtual.bin)")
+    parser.add_argument("--hdr", action="store_true",
+                        help="Generate HDR-capable EDID (adds BT.2020 colorimetry and "
+                             "HDR10 Static Metadata block so Sunshine/KMS can signal "
+                             "HDR to Moonlight clients)")
+    args = parser.parse_args()
 
     print("=" * 60)
     print("EDID Generator for Steam Deck Virtual Screens")
@@ -440,11 +562,15 @@ def main():
     print("=" * 60)
     print()
 
-    create_steam_deck_edid(output_file)
+    if args.hdr:
+        print("HDR mode: ENABLED (BT.2020 colorimetry + HDR10 metadata)")
+        print()
+
+    create_steam_deck_edid(args.output, hdr=args.hdr)
 
     print(f"\nTo use this EDID:")
-    print(f"  1. Copy to firmware: sudo cp {output_file} /usr/lib/firmware/edid/")
-    print(f"  2. Add kernel parameter: drm.edid_firmware=HDMI-A-1:edid/{output_file}")
+    print(f"  1. Copy to firmware: sudo cp {args.output} /usr/lib/firmware/edid/")
+    print(f"  2. Add kernel parameter: drm.edid_firmware=HDMI-A-1:edid/{args.output}")
     print(f"  3. Reboot")
     print()
 

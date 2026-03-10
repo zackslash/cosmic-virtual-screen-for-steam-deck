@@ -206,10 +206,31 @@ prompt_default_mode() {
     esac
 }
 
+prompt_hdr() {
+    # UI output goes to stderr so $() capture only receives "yes" or "no" on stdout
+    echo -e "${YELLOW}Enable HDR support?${NC}" >&2
+    echo >&2
+    echo "  HDR adds BT.2020 colorimetry and HDR10 Static Metadata to the EDID." >&2
+    echo >&2
+    echo -e "  ${YELLOW}Note: HDR streaming does not work yet.${NC}" >&2
+    echo "  COSMIC Desktop (v1.0.x) does not yet write HDR metadata to the DRM" >&2
+    echo "  connector, so Sunshine cannot advertise HDR to Moonlight clients." >&2
+    echo "  Enabling this future-proofs the EDID — no reinstall needed when" >&2
+    echo "  COSMIC adds HDR support." >&2
+    echo >&2
+    read -p "Enable HDR? [y/N]: " hdr_choice </dev/tty
+    if [[ "$hdr_choice" =~ ^[Yy] ]]; then
+        echo "yes"
+    else
+        echo "no"
+    fi
+}
+
 write_config_file() {
     local main_display="$1"
     local virtual_display="$2"
     local default_mode="$3"
+    local hdr_enabled="${4:-no}"
 
     # Determine the real user's home directory (installer runs as root via sudo)
     local real_home
@@ -230,6 +251,7 @@ write_config_file() {
 MAIN_DISPLAY=$main_display
 VIRTUAL_DISPLAY=$virtual_display
 DEFAULT_MODE=$default_mode
+HDR_ENABLED=$hdr_enabled
 EOF
 
     # Fix ownership if running via sudo
@@ -241,9 +263,11 @@ EOF
     print_info "  Main display:    $main_display"
     print_info "  Virtual display: $virtual_display"
     print_info "  Default mode:    $default_mode"
+    print_info "  HDR enabled:     $hdr_enabled"
 }
 
 generate_edid() {
+    local hdr_enabled="${1:-no}"
     print_info "Generating EDID file..."
 
     if [ ! -f "$SCRIPT_DIR/edid_generator.py" ]; then
@@ -251,11 +275,19 @@ generate_edid() {
         exit 1
     fi
 
-    python3 "$SCRIPT_DIR/edid_generator.py" "$SCRIPT_DIR/$EDID_FILENAME"
+    local hdr_flag=()
+    if [ "$hdr_enabled" = "yes" ]; then
+        hdr_flag=(--hdr)
+    fi
+
+    python3 "$SCRIPT_DIR/edid_generator.py" "${hdr_flag[@]}" "$SCRIPT_DIR/$EDID_FILENAME"
 
     if [ -f "$SCRIPT_DIR/$EDID_FILENAME" ]; then
         local size=$(stat -c%s "$SCRIPT_DIR/$EDID_FILENAME")
         print_success "EDID file generated: $EDID_FILENAME ($size bytes)"
+        if [ "$hdr_enabled" = "yes" ]; then
+            print_info "HDR mode: ENABLED (BT.2020 colorimetry + HDR10 Static Metadata)"
+        fi
     else
         print_error "Failed to generate EDID file"
         exit 1
@@ -773,6 +805,17 @@ main() {
     print_info "Default mode: $default_mode"
     echo
 
+    # Prompt for HDR EDID support
+    local hdr_enabled
+    hdr_enabled=$(prompt_hdr)
+    echo
+    if [ "$hdr_enabled" = "yes" ]; then
+        print_info "HDR: ENABLED (BT.2020 + HDR10 Static Metadata in EDID)"
+    else
+        print_info "HDR: disabled"
+    fi
+    echo
+
     # Confirm before making system changes
     print_warning "This will modify: mkinitcpio.conf, bootloader config, initramfs"
     read -p "Proceed with connector '$connector'? [y/N]: " confirm
@@ -783,7 +826,7 @@ main() {
     echo
 
     # Step 1: Generate EDID
-    generate_edid
+    generate_edid "$hdr_enabled"
     echo
 
     # Step 2: Install EDID to firmware
@@ -803,7 +846,7 @@ main() {
     echo
 
     # Step 6: Write config file
-    write_config_file "$main_display" "$connector" "$default_mode"
+    write_config_file "$main_display" "$connector" "$default_mode" "$hdr_enabled"
     echo
 
     # Done

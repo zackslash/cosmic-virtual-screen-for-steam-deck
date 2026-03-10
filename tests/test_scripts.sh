@@ -647,7 +647,7 @@ main() {
     echo -e "${BLUE}╚════════════════════════════════════════════╝${NC}"
     echo
     info "Project root: $PROJECT_ROOT"
-    
+
     test_shellcheck
     test_resolve_mode
     test_state_file_parsing
@@ -655,7 +655,7 @@ main() {
     test_cross_file_consistency
     test_config_file_loading
     test_helper_script_syntax
-    
+
     # Summary
     echo
     echo -e "${BLUE}========================================${NC}"
@@ -665,7 +665,7 @@ main() {
     echo -e "${GREEN}Passed: $PASSED${NC}"
     echo -e "${RED}Failed: $FAILED${NC}"
     echo
-    
+
     if [ $FAILED -eq 0 ]; then
         echo -e "${GREEN}✓ All tests passed!${NC}"
         exit 0

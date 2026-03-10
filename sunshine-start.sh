@@ -26,6 +26,7 @@ CONFIG_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/cosmic-deck-switch/config"
 MAIN_DISPLAY="DP-2"
 VIRTUAL_DISPLAY="HDMI-A-1"
 DEFAULT_MODE="deck-oled"
+HDR_ENABLED="no"
 
 if [ -f "$CONFIG_FILE" ]; then
     while IFS='=' read -r key value; do
@@ -33,6 +34,7 @@ if [ -f "$CONFIG_FILE" ]; then
             MAIN_DISPLAY)    MAIN_DISPLAY="$value" ;;
             VIRTUAL_DISPLAY) VIRTUAL_DISPLAY="$value" ;;
             DEFAULT_MODE)    DEFAULT_MODE="$value" ;;
+            HDR_ENABLED)     HDR_ENABLED="$value" ;;
         esac
     done < "$CONFIG_FILE"
 fi
@@ -164,6 +166,10 @@ resolve_mode() {
 
 log "Starting display switch for Sunshine streaming"
 log "Mode: $MODE | Main: $MAIN_DISPLAY | Virtual: $VIRTUAL_DISPLAY"
+if [ "$HDR_ENABLED" = "yes" ]; then
+    log "HDR: ENABLED — virtual display EDID advertises HDR10/BT.2020 to Sunshine"
+    log "HDR note: requires Sunshine HEVC/AV1 encoder + HDR enabled in Moonlight settings"
+fi
 
 # Save current state before changing anything
 save_state

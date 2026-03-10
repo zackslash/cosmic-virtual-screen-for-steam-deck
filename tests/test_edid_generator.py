@@ -924,5 +924,219 @@ class TestResolutionCoverage(unittest.TestCase):
                              f"Base DTD1 (safe_res) {safe_res} duplicated in extension block")
 
 
+class TestHDRSupport(unittest.TestCase):
+    """Test HDR EDID generation"""
+
+    @classmethod
+    def setUpClass(cls):
+        """Generate both SDR and HDR EDIDs for comparison"""
+        sdr_gen = EDIDGenerator(manufacturer_id="VRT", product_code=0x5344, hdr=False)
+        sdr_gen.add_resolution(1920, 1200, 60, "1920x1200@60Hz")
+        sdr_gen.add_resolution(1920, 1200, 120, "1920x1200@120Hz")
+        cls.sdr_edid = sdr_gen.generate()
+
+        hdr_gen = EDIDGenerator(manufacturer_id="VRT", product_code=0x5344, hdr=True)
+        hdr_gen.add_resolution(1920, 1200, 60, "1920x1200@60Hz")
+        hdr_gen.add_resolution(1920, 1200, 120, "1920x1200@120Hz")
+        cls.hdr_edid = hdr_gen.generate()
+
+    # --- Size and checksums ---
+
+    def test_hdr_edid_is_256_bytes(self):
+        """HDR EDID should be 256 bytes"""
+        self.assertEqual(len(self.hdr_edid), 256)
+
+    def test_hdr_base_block_checksum_valid(self):
+        """HDR base block checksum must be valid"""
+        self.assertEqual(sum(self.hdr_edid[:128]) % 256, 0)
+
+    def test_hdr_extension_block_checksum_valid(self):
+        """HDR extension block checksum must be valid"""
+        self.assertEqual(sum(self.hdr_edid[128:256]) % 256, 0)
+
+    # --- Video input byte ---
+
+    def test_hdr_video_input_byte(self):
+        """HDR EDID byte 20 should be 0xB0 (digital, 10bpc, undefined interface)"""
+        self.assertEqual(self.hdr_edid[20], 0xB0,
+                         f"HDR video input byte: {self.hdr_edid[20]:#04x}")
+
+    def test_sdr_video_input_byte(self):
+        """SDR EDID byte 20 should be 0x80 (digital, undefined depth)"""
+        self.assertEqual(self.sdr_edid[20], 0x80,
+                         f"SDR video input byte: {self.sdr_edid[20]:#04x}")
+
+    # --- Chromaticity ---
+
+    def test_hdr_chromaticity_bytes_not_all_zero(self):
+        """HDR EDID chromaticity bytes 25-34 should be non-zero (DCI-P3)"""
+        self.assertNotEqual(self.hdr_edid[25:35], b"\x00" * 10)
+
+    def test_sdr_chromaticity_bytes_not_all_zero(self):
+        """SDR EDID chromaticity bytes 25-34 should be non-zero (sRGB)"""
+        self.assertNotEqual(self.sdr_edid[25:35], b"\x00" * 10)
+
+    # --- CTA extension data blocks ---
+
+    def _parse_cta_data_blocks(self, edid):
+        """Return list of (tag, ext_tag_or_None, payload_bytes) for each data block."""
+        ext = edid[128:256]
+        dtd_offset = ext[2]
+        blocks = []
+        cursor = 4
+        while cursor < dtd_offset and cursor < 127:
+            header = ext[cursor]
+            tag = (header >> 5) & 0x07
+            length = header & 0x1F
+            if length == 0:
+                break
+            payload = ext[cursor+1:cursor+1+length]
+            ext_tag = payload[0] if tag == 7 and len(payload) > 0 else None
+            blocks.append((tag, ext_tag, payload))
+            cursor += 1 + length
+        return blocks
+
+    def test_hdr_extension_contains_colorimetry_db(self):
+        """HDR extension block must contain Colorimetry DB (ext tag 0x05)"""
+        blocks = self._parse_cta_data_blocks(self.hdr_edid)
+        ext_tags = [b[1] for b in blocks if b[1] is not None]
+        self.assertIn(0x05, ext_tags,
+                      "Colorimetry DB (ext tag 0x05) not found in HDR extension block")
+
+    def test_hdr_extension_contains_hdr_static_metadata_db(self):
+        """HDR extension block must contain HDR Static Metadata DB (ext tag 0x06)"""
+        blocks = self._parse_cta_data_blocks(self.hdr_edid)
+        ext_tags = [b[1] for b in blocks if b[1] is not None]
+        self.assertIn(0x06, ext_tags,
+                      "HDR Static Metadata DB (ext tag 0x06) not found in HDR extension block")
+
+    def test_sdr_extension_does_not_contain_hdr_data_blocks(self):
+        """SDR extension block must NOT contain extended tags 0x05 or 0x06"""
+        blocks = self._parse_cta_data_blocks(self.sdr_edid)
+        ext_tags = [b[1] for b in blocks if b[1] is not None]
+        self.assertNotIn(0x05, ext_tags,
+                         "Colorimetry DB (0x05) should not be in SDR extension block")
+        self.assertNotIn(0x06, ext_tags,
+                         "HDR Static Metadata DB (0x06) should not be in SDR extension block")
+
+    def test_hdr_static_metadata_eotf_includes_pq(self):
+        """HDR Static Metadata DB EOTF byte should have PQ (bit 2) set"""
+        blocks = self._parse_cta_data_blocks(self.hdr_edid)
+        hdr_block = next((b for b in blocks if b[1] == 0x06), None)
+        self.assertIsNotNone(hdr_block, "HDR Static Metadata DB not found")
+        # payload[0]=ext_tag, payload[1]=eotf
+        eotf = hdr_block[2][1]
+        self.assertTrue(eotf & 0x04, f"PQ (bit 2) not set in EOTF byte: {eotf:#04x}")
+
+    def test_hdr_colorimetry_db_includes_bt2020(self):
+        """Colorimetry DB should advertise BT.2020RGB and BT.2020YCC"""
+        blocks = self._parse_cta_data_blocks(self.hdr_edid)
+        col_block = next((b for b in blocks if b[1] == 0x05), None)
+        self.assertIsNotNone(col_block, "Colorimetry DB not found")
+        # payload[0]=ext_tag, payload[1]=colorimetry_flags
+        flags = col_block[2][1]
+        self.assertTrue(flags & 0x80, "BT2020RGB (bit 7) not set in colorimetry flags")
+        self.assertTrue(flags & 0x40, "BT2020YCC (bit 6) not set in colorimetry flags")
+
+    # --- HDR and SDR produce different output ---
+
+    def test_hdr_and_sdr_edids_differ(self):
+        """HDR and SDR EDIDs should not be identical"""
+        self.assertNotEqual(self.hdr_edid, self.sdr_edid)
+
+    # --- create_steam_deck_edid with hdr=True ---
+
+    def test_create_steam_deck_edid_hdr(self):
+        """create_steam_deck_edid(hdr=True) should produce valid 256-byte HDR EDID"""
+        import tempfile, os
+        with tempfile.NamedTemporaryFile(suffix=".bin", delete=False) as f:
+            tmp = f.name
+        try:
+            create_steam_deck_edid(tmp, hdr=True)
+            with open(tmp, "rb") as f:
+                data = f.read()
+            self.assertEqual(len(data), 256)
+            self.assertEqual(sum(data[:128]) % 256, 0)
+            self.assertEqual(sum(data[128:256]) % 256, 0)
+            # Should contain HDR tag
+            ext = data[128:256]
+            dtd_offset = ext[2]
+            cursor = 4
+            found_hdr = False
+            while cursor < dtd_offset and cursor < 127:
+                header = ext[cursor]
+                tag = (header >> 5) & 0x07
+                length = header & 0x1F
+                if length == 0:
+                    break
+                if tag == 7 and ext[cursor+1] == 0x06:
+                    found_hdr = True
+                    break
+                cursor += 1 + length
+            self.assertTrue(found_hdr, "HDR Static Metadata DB not found in create_steam_deck_edid(hdr=True)")
+        finally:
+            os.unlink(tmp)
+
+    # --- init flag ---
+
+    def test_init_hdr_true(self):
+        """EDIDGenerator(hdr=True) should set self.hdr = True"""
+        gen = EDIDGenerator(hdr=True)
+        self.assertTrue(gen.hdr)
+
+    def test_init_hdr_false(self):
+        """EDIDGenerator(hdr=False) should set self.hdr = False"""
+        gen = EDIDGenerator(hdr=False)
+        self.assertFalse(gen.hdr)
+
+    # --- Full 9-resolution config with HDR ---
+
+    def test_hdr_full_steam_deck_config_fits(self):
+        """HDR EDID with all 9 Steam Deck resolutions should be 256 bytes with valid checksums"""
+        import tempfile, os
+        with tempfile.NamedTemporaryFile(suffix=".bin", delete=False) as f:
+            tmp = f.name
+        try:
+            create_steam_deck_edid(tmp, hdr=True)
+            with open(tmp, "rb") as f:
+                data = f.read()
+            self.assertEqual(len(data), 256,
+                             "HDR full config EDID must be exactly 256 bytes")
+            self.assertEqual(sum(data[:128]) % 256, 0,
+                             "HDR full config base block checksum invalid")
+            self.assertEqual(sum(data[128:256]) % 256, 0,
+                             "HDR full config extension block checksum invalid")
+            # HDR data blocks must still be present
+            ext = data[128:256]
+            dtd_offset = ext[2]
+            cursor = 4
+            found_hdr = False
+            while cursor < dtd_offset and cursor < 127:
+                header = ext[cursor]
+                tag = (header >> 5) & 0x07
+                length = header & 0x1F
+                if length == 0:
+                    break
+                if tag == 7 and ext[cursor + 1] == 0x06:
+                    found_hdr = True
+                    break
+                cursor += 1 + length
+            self.assertTrue(found_hdr,
+                            "HDR Static Metadata DB missing in full 9-resolution HDR config")
+        finally:
+            os.unlink(tmp)
+
+    # --- DTD offset correctness ---
+
+    def test_hdr_dtd_offset_accounts_for_hdr_blocks(self):
+        """HDR extension DTD offset should be larger than SDR to account for HDR data blocks"""
+        hdr_dtd_offset = self.hdr_edid[128 + 2]
+        sdr_dtd_offset = self.sdr_edid[128 + 2]
+        # HDR adds colorimetry DB (4 bytes) + HDR Static Metadata DB (7 bytes) = 11 bytes
+        self.assertEqual(hdr_dtd_offset - sdr_dtd_offset, 11,
+                         f"HDR DTD offset ({hdr_dtd_offset}) should be 11 bytes past "
+                         f"SDR DTD offset ({sdr_dtd_offset})")
+
+
 if __name__ == '__main__':
     unittest.main()
