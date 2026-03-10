@@ -644,10 +644,12 @@ test_helper_script_syntax() {
 }
 
 # ── Test 8: gamescope resolve_mode function ───────────────────────
+# resolve_mode was moved from sunshine-start-gamescope.sh into switch-to-hdr.sh
+# (gamescope launch now happens in switch-to-hdr.sh before Sunshine restarts)
 test_gamescope_resolve_mode() {
-    section "sunshine-start-gamescope.sh resolve_mode function"
+    section "switch-to-hdr.sh resolve_mode function"
 
-    local script="$PROJECT_ROOT/sunshine-start-gamescope.sh"
+    local script="$PROJECT_ROOT/switch-to-hdr.sh"
     local start_script="$PROJECT_ROOT/sunshine-start.sh"
 
     declare -A expected_modes=(
@@ -691,20 +693,20 @@ test_gamescope_resolve_mode() {
         fail "gamescope resolve_mode missing error case for unknown modes"
     fi
 
-    # Test that the mode tables in both scripts are identical
+    # Test that the mode tables in sunshine-start.sh and switch-to-hdr.sh are identical
     local all_match=true
     for mode in "${!expected_modes[@]}"; do
         local val_start val_gamescope
         val_start=$(grep "^[[:space:]]*${mode})" "$start_script" | sed -n 's/.*echo "\([^"]*\)".*/\1/p')
         val_gamescope=$(grep "^[[:space:]]*${mode})" "$script" | sed -n 's/.*echo "\([^"]*\)".*/\1/p')
         if [ "$val_start" != "$val_gamescope" ]; then
-            fail "Mode table mismatch for '$mode': sunshine-start.sh='$val_start', sunshine-start-gamescope.sh='$val_gamescope'"
+            fail "Mode table mismatch for '$mode': sunshine-start.sh='$val_start', switch-to-hdr.sh='$val_gamescope'"
             all_match=false
         fi
     done
 
     if [ "$all_match" = true ]; then
-        pass "Mode tables are identical between sunshine-start.sh and sunshine-start-gamescope.sh"
+        pass "Mode tables are identical between sunshine-start.sh and switch-to-hdr.sh"
     fi
 }
 
@@ -1214,28 +1216,28 @@ EOF
         fail "sunshine-stop-gamescope.sh missing systemd-run --no-block"
     fi
 
-    # ── 13g: start script guards against double-start ──────────
-    info "Testing double-start guard in sunshine-start-gamescope.sh"
+    # ── 13g: switch-to-hdr.sh guards against double-start ──────────
+    info "Testing double-start guard in switch-to-hdr.sh"
 
-    if grep -q 'A gamescope session appears to be already active' "$start_script"; then
-        pass "sunshine-start-gamescope.sh has double-start guard"
+    if grep -q 'Already in HDR mode' "$switch_script"; then
+        pass "switch-to-hdr.sh has double-start guard (idempotency check)"
     else
-        fail "sunshine-start-gamescope.sh missing double-start guard"
+        fail "switch-to-hdr.sh missing double-start guard"
     fi
 
-    # ── 13h: start script has ERR trap for VT recovery ─────────
-    info "Testing ERR trap for VT recovery in sunshine-start-gamescope.sh"
+    # ── 13h: switch-to-hdr.sh has ERR trap for VT recovery ─────────
+    info "Testing ERR trap for VT recovery in switch-to-hdr.sh"
 
-    if grep -q 'cleanup_vt' "$start_script" && grep -q 'trap cleanup_vt ERR' "$start_script"; then
-        pass "sunshine-start-gamescope.sh has ERR trap (cleanup_vt) for VT recovery"
+    if grep -q 'cleanup_vt' "$switch_script" && grep -q 'trap cleanup_vt ERR' "$switch_script"; then
+        pass "switch-to-hdr.sh has ERR trap (cleanup_vt) for VT recovery"
     else
-        fail "sunshine-start-gamescope.sh missing ERR trap for VT recovery"
+        fail "switch-to-hdr.sh missing ERR trap for VT recovery"
     fi
 
-    if grep -q 'trap - ERR' "$start_script"; then
-        pass "sunshine-start-gamescope.sh clears ERR trap after gamescope is confirmed alive"
+    if grep -q 'trap - ERR' "$switch_script"; then
+        pass "switch-to-hdr.sh clears ERR trap after gamescope is confirmed alive"
     else
-        fail "sunshine-start-gamescope.sh does not clear ERR trap after safe point"
+        fail "switch-to-hdr.sh does not clear ERR trap after safe point"
     fi
 
     # ── 13i: drop-in path is in XDG_RUNTIME_DIR (not ~/.config) ─
