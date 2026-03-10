@@ -35,7 +35,7 @@ fi
 # Refresh is in millihertz (KDL format) — converted to Hz automatically
 FALLBACK_WIDTH="3840"
 FALLBACK_HEIGHT="2160"
-FALLBACK_REFRESH="160000"
+FALLBACK_REFRESH="59980"
 FALLBACK_SCALE="1.25"
 FALLBACK_TRANSFORM="normal"
 FALLBACK_ADAPTIVE_SYNC="automatic"
