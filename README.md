@@ -104,21 +104,13 @@ ssh user@your-pc /path/to/restore-display.sh  # Or via SSH
 
 ## HDR
 
-When HDR is enabled during installation, the EDID is generated with:
+The installer can generate an HDR-capable EDID (BT.2020 colorimetry, HDR10 Static Metadata, 10-bit colour depth) that tells the GPU driver the virtual display supports HDR.
 
-- **BT.2020 colorimetry** (CTA-861 Extended Tag 0x05) — advertises wide-gamut colour space
-- **HDR10 Static Metadata** (CTA-861 Extended Tag 0x06) — SMPTE ST 2084 (PQ) EOTF, ~1000 nit peak luminance
-- **10-bit colour depth** signalled in the EDID video input byte
+> **HDR streaming does not work yet.** COSMIC Desktop (v1.0.x) does not implement HDR output, so Sunshine cannot advertise HDR to Moonlight clients. Enabling this future-proofs the EDID — no reinstall needed when COSMIC adds HDR support.
 
-The EDID tells the GPU driver that the virtual display *supports* HDR. Sunshine determines whether to stream HDR by reading the `HDR_OUTPUT_METADATA` DRM connector property — which the Wayland compositor must write at runtime.
+When COSMIC ships HDR you will also need Sunshine with HEVC/AV1 encoder and HDR enabled in Moonlight.
 
-**COSMIC Desktop (v1.0.x) does not yet implement HDR output**, so HDR streaming is not currently functional. Enabling HDR in the installer future-proofs the EDID: when COSMIC adds HDR support, no reinstall will be needed.
-
-When COSMIC does ship HDR, you will also need:
-- Sunshine configured with HEVC (`hevc_mode = 3`) or AV1 (`av1_mode = 3`) encoder
-- HDR enabled in Moonlight client settings
-
-To regenerate the EDID with HDR enabled manually:
+To regenerate manually:
 
 ```bash
 python3 edid_generator.py --hdr steamdeck_virtual.bin
