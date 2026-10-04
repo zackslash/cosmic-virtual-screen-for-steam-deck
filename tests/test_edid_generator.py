@@ -517,8 +517,8 @@ class TestDisplayRangeLimits(unittest.TestCase):
 class TestResolutionConfiguration(unittest.TestCase):
     """Test resolution configuration and validation"""
 
-    def test_default_config_has_9_resolutions(self):
-        """Default Steam Deck config should have exactly 9 resolutions"""
+    def test_default_config_has_10_resolutions(self):
+        """Default Steam Deck config should have exactly 10 resolutions"""
         gen = EDIDGenerator(manufacturer_id="VRT", product_code=0x5344)
 
         # Replicate create_steam_deck_edid logic
@@ -531,8 +531,9 @@ class TestResolutionConfiguration(unittest.TestCase):
         gen.add_resolution(2560, 1440, 120, "2560x1440@120Hz")
         gen.add_resolution(2560, 1600, 60, "2560x1600@60Hz")
         gen.add_resolution(2560, 1600, 90, "2560x1600@90Hz")
+        gen.add_resolution(3840, 2160, 60, "3840x2160@60Hz")
 
-        self.assertEqual(len(gen.resolutions), 9)
+        self.assertEqual(len(gen.resolutions), 10)
 
     def test_all_expected_resolutions_present(self):
         """All expected resolutions should be present in default config"""
@@ -548,6 +549,7 @@ class TestResolutionConfiguration(unittest.TestCase):
             (2560, 1440, 120),
             (2560, 1600, 60),
             (2560, 1600, 90),
+            (3840, 2160, 60),
         ]
 
         for width, height, refresh in expected:
@@ -814,7 +816,7 @@ class TestResolutionDataclass(unittest.TestCase):
 
 
 def _create_steamdeck_generator():
-    """Create a generator with all 9 Steam Deck resolutions (matching edid_generator.py main)"""
+    """Create a generator with all 10 Steam Deck resolutions (matching edid_generator.py main)"""
     gen = EDIDGenerator(manufacturer_id="VRT", product_code=0x5344)
     gen.add_resolution(1280, 800, 60, "deck-lcd")
     gen.add_resolution(1280, 800, 90, "deck-lcd-90")
@@ -825,6 +827,7 @@ def _create_steamdeck_generator():
     gen.add_resolution(2560, 1440, 120, "1440p-120")
     gen.add_resolution(2560, 1600, 60, "1600p")
     gen.add_resolution(2560, 1600, 90, "1600p-90")
+    gen.add_resolution(3840, 2160, 60, "tv-4k")
     return gen
 
 
@@ -1136,6 +1139,103 @@ class TestHDRSupport(unittest.TestCase):
         self.assertEqual(hdr_dtd_offset - sdr_dtd_offset, 11,
                          f"HDR DTD offset ({hdr_dtd_offset}) should be 11 bytes past "
                          f"SDR DTD offset ({sdr_dtd_offset})")
+
+
+class TestTV4KMode(unittest.TestCase):
+    """TV 4K mode (3840x2160@60Hz) must be a purely additive EDID change"""
+
+    @staticmethod
+    def _build(with_tv: bool, hdr: bool = True):
+        gen = EDIDGenerator(manufacturer_id="VRT", product_code=0x5344, hdr=hdr)
+        for w, h, r in [(1280, 800, 60), (1280, 800, 90),
+                        (1920, 1200, 60), (1920, 1200, 90), (1920, 1200, 120),
+                        (2560, 1440, 60), (2560, 1440, 120),
+                        (2560, 1600, 60), (2560, 1600, 90)]:
+            gen.add_resolution(w, h, r)
+        if with_tv:
+            gen.add_resolution(3840, 2160, 60, "3840x2160@60Hz")
+        return gen.generate()
+
+    @classmethod
+    def setUpClass(cls):
+        cls.edid_deck = cls._build(with_tv=False)
+        cls.edid_tv = cls._build(with_tv=True)
+
+    @staticmethod
+    def _ext_dtds(edid):
+        """Return list of (h_active, v_active, rounded refresh) for extension DTDs"""
+        results = []
+        pos = 128 + edid[130]
+        while pos + 18 <= 255:
+            dtd = edid[pos:pos + 18]
+            if dtd[0] == 0 and dtd[1] == 0:
+                break
+            h_active = dtd[2] | ((dtd[4] >> 4) << 8)
+            h_blank = dtd[3] | ((dtd[4] & 0x0F) << 8)
+            v_active = dtd[5] | ((dtd[7] >> 4) << 8)
+            v_blank = dtd[6] | ((dtd[7] & 0x0F) << 8)
+            if h_active + h_blank == 0 or v_active + v_blank == 0:
+                break
+            pixel_clock_hz = (dtd[0] | (dtd[1] << 8)) * 10000
+            refresh = pixel_clock_hz / ((h_active + h_blank) * (v_active + v_blank))
+            results.append((h_active, v_active, round(refresh)))
+            pos += 18
+        return results
+
+    def test_4k60_dtd_present(self):
+        """3840x2160@60Hz must appear in the extension DTDs"""
+        self.assertIn((3840, 2160, 60), self._ext_dtds(self.edid_tv))
+
+    def test_4k60_appended_after_deck_modes(self):
+        """The 4K DTD must come after every pre-existing deck DTD"""
+        deck = self._ext_dtds(self.edid_deck)
+        tv = self._ext_dtds(self.edid_tv)
+        self.assertEqual(tv[:len(deck)], deck)
+        self.assertEqual(len(tv), len(deck) + 1)
+
+    def test_deck_base_block_byte_identical(self):
+        """Adding TV modes must not change the base block at all"""
+        self.assertEqual(self.edid_deck[:128], self.edid_tv[:128])
+
+    def test_diff_is_only_appended_dtd_and_checksum(self):
+        """Byte changes must be confined to the appended DTD slot + CTA checksum"""
+        diffs = {i for i in range(256) if self.edid_deck[i] != self.edid_tv[i]}
+        dtd_off = 128 + self.edid_deck[130]
+        n_deck = len(self._ext_dtds(self.edid_deck))
+        slot = set(range(dtd_off + 18 * n_deck, dtd_off + 18 * (n_deck + 1)))
+        # An 18-byte DTD contains zero padding bytes (image size, borders,
+        # sync high nibbles) that cannot produce a byte diff, so require:
+        # every diff is inside the new DTD slot or the checksum byte, the
+        # slot was previously zero padding, and the slot did change.
+        self.assertTrue(diffs <= slot | {255},
+                        "unexpected byte changes outside appended DTD + checksum: "
+                        f"{sorted(diffs - slot - {255})}")
+        self.assertEqual(
+            self.edid_deck[dtd_off + 18 * n_deck: dtd_off + 18 * (n_deck + 1)],
+            bytes(18),
+            "appended slot was not zero padding in the deck-only EDID")
+        self.assertTrue(diffs & slot,
+                        "appended DTD slot is unchanged (no DTD added?)")
+
+    def test_4k60_timing_within_declared_limits(self):
+        """4K60 must fit the EDID's declared limits (600MHz, 160kHz, 48-125Hz)"""
+        dtd_off = 128 + self.edid_tv[130]
+        n_deck = len(self._ext_dtds(self.edid_deck))
+        dtd = self.edid_tv[dtd_off + 18 * n_deck: dtd_off + 18 * (n_deck + 1)]
+
+        h_active = dtd[2] | ((dtd[4] >> 4) << 8)
+        h_blank = dtd[3] | ((dtd[4] & 0x0F) << 8)
+        v_active = dtd[5] | ((dtd[7] >> 4) << 8)
+        v_blank = dtd[6] | ((dtd[7] & 0x0F) << 8)
+        pixel_clock_hz = (dtd[0] | (dtd[1] << 8)) * 10000
+
+        self.assertEqual((h_active, v_active), (3840, 2160))
+        self.assertLess(pixel_clock_hz, 600_000_000)  # VSDB Max TMDS 600MHz
+        h_rate = pixel_clock_hz / (h_active + h_blank)
+        self.assertLessEqual(h_rate, 160_000)         # Range Limits max H rate
+        refresh = pixel_clock_hz / ((h_active + h_blank) * (v_active + v_blank))
+        self.assertTrue(48 <= refresh <= 125, f"refresh {refresh} outside 48-125")
+        self.assertEqual(round(refresh), 60)
 
 
 if __name__ == '__main__':

@@ -13,7 +13,7 @@
 #     ./sunshine-start.sh [mode]
 #
 #   Modes: deck-lcd, deck-oled, 1200p, 1200p-90, 1200p-120,
-#          1440p, 1440p-120, 1600p, 1600p-90
+#          1440p, 1440p-120, 1600p, 1600p-90, tv-4k
 #   Default: deck-oled (configurable via ~/.config/cosmic-deck-switch/config)
 #
 
@@ -154,9 +154,10 @@ resolve_mode() {
         1440p-120)   echo "2560 1440 120" ;;
         1600p)       echo "2560 1600 60" ;;
         1600p-90)    echo "2560 1600 90" ;;
+        tv-4k)       echo "3840 2160 60" ;;
         *)
             log "ERROR: Unknown mode '$mode'"
-            log "Valid modes: deck-lcd, deck-oled, deck-lcd-2x, deck-oled-2x, 1200p, 1200p-90, 1200p-120, 1440p, 1440p-120, 1600p, 1600p-90"
+            log "Valid modes: deck-lcd, deck-oled, deck-lcd-2x, deck-oled-2x, 1200p, 1200p-90, 1200p-120, 1440p, 1440p-120, 1600p, 1600p-90, tv-4k"
             exit 1
             ;;
     esac

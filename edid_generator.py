@@ -316,10 +316,21 @@ class EDIDGenerator:
         # - Wide 60Hz modes (width > 2288) that can't be in Standard Timings
         # Exclude base block DTDs (safe_res + DTD2-3) to avoid duplicates
         base_covered = self._base_dtd_modes | {self._safe_res}
-        all_high_res = [r for r in self.resolutions
-                        if (r.refresh_rate > 60 or r.width > 2288)
-                        and r not in base_covered]
-        all_high_res.sort(key=lambda x: (x.refresh_rate, x.width), reverse=True)
+
+        def is_tv_mode(r: Resolution) -> bool:
+            # TV-sized modes (wider than the largest deck mode) are appended
+            # after deck modes so adding TV resolutions never reorders or
+            # displaces existing deck DTDs.
+            return r.width > 2560
+
+        candidates = [r for r in self.resolutions
+                      if (r.refresh_rate > 60 or r.width > 2288)
+                      and r not in base_covered]
+        deck_res = [r for r in candidates if not is_tv_mode(r)]
+        tv_res = [r for r in candidates if is_tv_mode(r)]
+        deck_res.sort(key=lambda x: (x.refresh_rate, x.width), reverse=True)
+        tv_res.sort(key=lambda x: (x.refresh_rate, x.width), reverse=True)
+        all_high_res = deck_res + tv_res
 
         for res in all_high_res:
             if cursor + 18 <= 127:
@@ -472,8 +483,12 @@ class EDIDGenerator:
 
         # Bytes 54-125: Four 18-byte descriptor blocks
 
-        # DTD 1: Safe 60Hz anchor (largest 60Hz resolution for boot)
-        safe_res = next((r for r in sorted_res if abs(r.refresh_rate - 60) <= 1), self.resolutions[0])
+        # DTD 1: Safe 60Hz anchor (largest deck-sized 60Hz resolution for boot).
+        # TV-sized modes (width > 2560, same threshold as is_tv_mode in the
+        # CTA builder) are excluded so the anchor stays deck-shaped and the
+        # base block is unchanged by TV additions.
+        safe_res = next((r for r in sorted_res if abs(r.refresh_rate - 60) <= 1
+                         and r.width <= 2560), self.resolutions[0])
         self._safe_res = safe_res  # Store for extension block dedup
         edid[54:72] = self._calculate_dtd(safe_res)
 
@@ -539,6 +554,9 @@ def create_steam_deck_edid(output_file: str = "steamdeck_virtual.bin", hdr: bool
     # 1600p resolutions (16:10)
     generator.add_resolution(2560, 1600, 60, "2560x1600@60Hz")
     generator.add_resolution(2560, 1600, 90, "2560x1600@90Hz")
+
+    # 4K TV mode (16:9) — for streaming to the TV with a docked Deck as client
+    generator.add_resolution(3840, 2160, 60, "3840x2160@60Hz")
 
     generator.save(output_file)
     return output_file

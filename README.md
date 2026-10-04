@@ -33,6 +33,7 @@ To uninstall: `sudo ./uninstall.sh` then reboot.
 | `deck-oled` | 1280x800@90Hz | Steam Deck OLED native |
 | `deck-lcd-2x` | 2560x1600@60Hz | Deck LCD supersampled |
 | `deck-oled-2x` | 2560x1600@90Hz | Deck OLED supersampled |
+| `tv-4k` | 3840x2160@60Hz | 4K TV streaming (docked Deck as client) |
 
 Additional modes: `1200p`, `1200p-90`, `1200p-120`, `1440p`, `1440p-120`, `1600p`, `1600p-90` — run `cosmic-deck-switch list` for details.
 
@@ -76,6 +77,10 @@ HDR_ENABLED=no   # set to "yes" if you enabled HDR during installation
        "exit-timeout": 5,
        "prep-cmd": [
            {
+               "do": "touch /tmp/sunshine-streaming",
+               "undo": "rm -f /tmp/sunshine-streaming"
+           },
+           {
                "do": "/path/to/sunshine-start.sh deck-oled",
                "undo": "/path/to/sunshine-stop.sh"
            }
@@ -84,9 +89,34 @@ HDR_ENABLED=no   # set to "yes" if you enabled HDR during installation
    ```
    Replace `/path/to/` with the actual location of your cloned repository.
 
-### Emergency Recovery
+   The `/tmp/sunshine-streaming` sentinel file is used by the automated crash recovery below.
 
-If your main display doesn't come back (Sunshine crash, etc.):
+### Crash Recovery
+
+If Sunshine crashes or is killed ungracefully, the `undo` prep-cmds don't fire and your main display stays disabled. Two layers of protection handle this:
+
+**Automated — systemd `ExecStopPost=` drop-in (recommended):**
+
+`sunshine-cleanup.sh` is called by systemd every time the Sunshine service stops, regardless of how it stopped (clean exit, crash, SIGKILL, `systemctl stop`). It checks for the `/tmp/sunshine-streaming` sentinel — on a clean shutdown the `undo` prep-cmd removes it first so cleanup does nothing; on a crash the sentinel survives and cleanup calls `sunshine-stop.sh` to restore your display.
+
+Set it up with a drop-in:
+
+```bash
+mkdir -p ~/.config/systemd/user/sunshine.service.d/
+```
+
+Create `~/.config/systemd/user/sunshine.service.d/cleanup.conf`:
+
+```ini
+[Service]
+ExecStopPost=/path/to/sunshine-cleanup.sh
+```
+
+```bash
+systemctl --user daemon-reload
+```
+
+**Manual fallback:**
 
 ```bash
 ./restore-display.sh                          # Run locally
