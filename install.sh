@@ -184,6 +184,7 @@ prompt_default_mode() {
     echo "  9) 1440p-120     2560x1440@120Hz"
     echo " 10) 1600p         2560x1600@60Hz"
     echo " 11) 1600p-90      2560x1600@90Hz"
+    echo " 12) tv-4k         3840x2160@60Hz  (4K TV streaming)"
     echo
     read -p "Choice [2]: " mode_choice
 
@@ -199,6 +200,7 @@ prompt_default_mode() {
         9)  echo "1440p-120" ;;
         10) echo "1600p" ;;
         11) echo "1600p-90" ;;
+        12) echo "tv-4k" ;;
         *)
             print_warning "Invalid choice, defaulting to deck-oled"
             echo "deck-oled"
@@ -598,6 +600,7 @@ show_help() {
     echo "  1440p-120     Set 2560x1440@120Hz"
     echo "  1600p         Set 2560x1600@60Hz (16:10)"
     echo "  1600p-90      Set 2560x1600@90Hz"
+    echo "  tv-4k         Set 3840x2160@60Hz (4K TV)"
     echo ""
     echo "Commands:"
     echo "  list          Show available modes on the virtual display"
@@ -641,6 +644,7 @@ case "\${1:-help}" in
     1440p-120)   set_mode 2560  1440 120  "2560x1440@120Hz" ;;
     1600p)       set_mode 2560  1600 60   "2560x1600@60Hz" ;;
     1600p-90)    set_mode 2560  1600 90   "2560x1600@90Hz" ;;
+    tv-4k)       set_mode 3840  2160 60   "3840x2160@60Hz (4K TV)" ;;
     list)
         echo "Available modes on \$CONNECTOR:"
         cosmic-randr list 2>&1 | grep -A 100 "\$CONNECTOR" | head -30

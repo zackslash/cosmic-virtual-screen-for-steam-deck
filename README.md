@@ -33,6 +33,7 @@ To uninstall: `sudo ./uninstall.sh` then reboot.
 | `deck-oled` | 1280x800@90Hz | Steam Deck OLED native |
 | `deck-lcd-2x` | 2560x1600@60Hz | Deck LCD supersampled |
 | `deck-oled-2x` | 2560x1600@90Hz | Deck OLED supersampled |
+| `tv-4k` | 3840x2160@60Hz | 4K TV streaming (docked Deck as client) |
 
 Additional modes: `1200p`, `1200p-90`, `1200p-120`, `1440p`, `1440p-120`, `1600p`, `1600p-90` — run `cosmic-deck-switch list` for details.
 

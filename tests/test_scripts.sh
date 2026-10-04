@@ -102,6 +102,7 @@ test_resolve_mode() {
         ["1440p-120"]="2560 1440 120"
         ["1600p"]="2560 1600 60"
         ["1600p-90"]="2560 1600 90"
+        ["tv-4k"]="3840 2160 60"
     )
     
     for mode in "${!expected_modes[@]}"; do
@@ -620,7 +621,7 @@ test_helper_script_syntax() {
     
     # Verify all mode case entries use separate width/height
     local case_entries
-    case_entries=$(grep -E '^[[:space:]]+(deck-lcd|deck-oled|deck-lcd-2x|deck-oled-2x|1200p|1440p|1600p)' "$temp_helper" || true)
+    case_entries=$(grep -E '^[[:space:]]+(deck-lcd|deck-oled|deck-lcd-2x|deck-oled-2x|1200p|1440p|1600p|tv-4k)' "$temp_helper" || true)
     
     if [ -n "$case_entries" ]; then
         local all_correct=true
